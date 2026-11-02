@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="ru"><head><meta name="robots" content="noindex"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>П-48 · Макет: рисунок → BMP для носочной машины · Десенатор</title>
+
+<style>
+/* ===== Служебная панель прототипа (не часть интерфейса) ===== */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--stage,#d9d9d9)}
+.proto{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;padding:6px 14px;background:#262626;color:#fff;font:14px/1.3 system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}
+.proto b{font-weight:600;margin-right:4px}
+.proto .seg{display:inline-flex;border:1px solid #777;border-radius:8px;overflow:hidden}
+.proto .seg button{font:inherit;color:#fff;background:transparent;border:0;padding:6px 10px;cursor:pointer;min-height:32px}
+.proto .seg button+button{border-left:1px solid #777}
+.proto .seg button[aria-pressed=true]{background:#fff;color:#111}
+.proto .seg button:focus-visible{outline:2px solid #ffd54a;outline-offset:-2px}
+.proto small{color:#cfcfcf}
+.stage{display:flex;justify-content:center}
+.stage.phone{padding:20px 12px 40px}
+#app{container:app/inline-size;position:relative;width:100%;height:calc(100vh - var(--protoH,46px));overflow:hidden}
+.stage.phone #app{width:360px;height:780px;border-radius:34px;box-shadow:0 0 0 10px #111,0 20px 50px rgba(0,0,0,.35);flex:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+canvas.cv{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+canvas.cv.pan{cursor:grab}
+.toast{position:absolute;left:50%;bottom:90px;transform:translateX(-50%);z-index:90;max-width:min(92%,480px);padding:12px 16px;border-radius:10px;background:#1d1d1d;color:#fff;font:15px/1.35 system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+
+/* ===== Токены проекта (макеты/токены.md) ===== */
+:root{
+ --bg:#F4EFE6; --surf:#FFFDF8; --sunk:#EAE2D4; --line:#DDD3C3;
+ --text:#2A211B;      /* 13.77 на bg · 15.51 на surf */
+ --text-2:#6B5D50;    /* 5.54 на bg · 6.25 на surf · 4.94 на sunk */
+ --action:#B8432F;    /* 5.32 как текст на surf */
+ --on-action:#FFFFFF; /* 5.41 на action */
+ --action-bg:#F8E3DC;
+ --error:#B42318; --error-bg:#FBE7E3;   /* 5.52 */
+ --ok:#2F6B3A; --ok-bg:#E4F0E2;         /* 6.29 на surf */
+ --warn:#8A5A00; --warn-bg:#FFF2D2;     /* 5.33 */
+ --border-ctrl:#928575;                 /* 3.54 на surf — границы полей */
+ --cv-bg:#E3D9C8; --cv-viol:#C8102E; --cv-thin:#FFFFFF; --cv-thin-ring:#1A1A1A; --cv-half:#B8432F;
+ --cv-grid:rgba(42,33,27,.16); --cv-grid10:rgba(42,33,27,.45); --cv-label:#6B5D50; --cv-focus:#2A211B;
+ --stage:#cfc6b6;
+ --font:'Golos Text',Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+ --serif:'PT Serif',Georgia,'Times New Roman',serif;
+ --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+ --t-hero:44px; --t-h1:32px; --t-say:24px; --t-h2:22px; --t-lead:18px; --t-body:16px; --t-small:15px; --t-cap:14px;
+ --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:28px; --s8:40px;
+ --r-ctrl:12px; --r-card:16px; --r-panel:20px; --r-stage:24px; --r-pill:999px;
+ --h-btn:48px; --h-btn-big:56px; --h-tap:44px; --h-tool:48px;
+ --ease:cubic-bezier(.23,1,.32,1);
+}
+@media (prefers-color-scheme:dark){:root{
+ --bg:#1C1714; --surf:#26201C; --sunk:#2F2823; --line:#3B322B;
+ --text:#F1E8DD;      /* 14.66 на bg */
+ --text-2:#BFAF9F;    /* 7.54 на surf */
+ --action:#F08A6E; --on-action:#2A0F08; /* 7.32 */ --action-bg:#43261E;
+ --error:#FF8A80; --error-bg:#3D1D1A; --ok:#8FD19A; --ok-bg:#1D3020; --warn:#F2C46B; --warn-bg:#382C12;
+ --border-ctrl:#8C7D6E; /* 4.04 */
+ --cv-bg:#14100E; --cv-viol:#FF5A5F; --cv-half:#F08A6E; --cv-grid:rgba(255,255,255,.13); --cv-grid10:rgba(255,255,255,.36); --cv-label:#BFAF9F; --cv-focus:#fff; --stage:#0a0807}}
+/* ===== Каркас ===== */
+#app{background:var(--bg);color:var(--text);font:var(--t-body)/1.5 var(--font)}
+:where(#app button,#app input,#app select){font:inherit;color:inherit}
+#app :focus-visible{outline:2px solid var(--action);outline-offset:2px}
+.c{display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);height:100%;position:relative}
+.hd{display:flex;align-items:center;gap:var(--s4);padding:var(--s3) var(--s7)}
+.brand{font-family:var(--serif);font-size:var(--t-h2);font-weight:700}.brand em{font-style:normal;color:var(--action)}
+.sp{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);min-height:var(--h-btn);padding:0 var(--s5);border-radius:var(--r-pill);border:1.5px solid var(--border-ctrl);background:var(--surf);cursor:pointer;font-weight:600;text-align:center}
+.btn.primary{background:var(--action);border-color:var(--action);color:var(--on-action)}
+.btn.big{min-height:var(--h-btn-big);padding:0 var(--s7);font-size:var(--t-lead)}
+@media (hover:hover) and (pointer:fine){.btn:hover{border-color:var(--text)}.btn.primary:hover{filter:brightness(1.08)}}
+.btn:active{transform:scale(.98)}
+.link{background:none;border:0;padding:0;color:var(--action);text-decoration:underline;cursor:pointer;font-weight:500;text-align:left}
+.iconbtn{display:inline-grid;place-items:center;width:var(--h-btn);height:var(--h-btn);border-radius:50%;border:1.5px solid var(--border-ctrl);background:var(--surf);cursor:pointer;flex:none}
+.scroll{overflow:auto;min-height:0}
+.foot{display:none}
+/* ===== Старт ===== */
+.hero{max-width:1100px;margin:0 auto;padding:var(--s5) var(--s7) var(--s8);display:grid;grid-template-columns:1.05fr 1fr;gap:var(--s8);align-items:center;min-height:100%}
+.hero h1{font-family:var(--serif);font-size:var(--t-hero);line-height:1.1;margin:0 0 var(--s3);letter-spacing:-.01em}
+.hero h1 em{color:var(--action)}
+.lead{font-size:var(--t-lead);color:var(--text-2);margin:0 0 var(--s6);max-width:460px}
+.drop{display:grid;gap:var(--s3);place-items:center;text-align:center;padding:var(--s8) var(--s6);border-radius:var(--r-stage);border:2px dashed var(--border-ctrl);background:var(--surf)}
+.drop.over{border-color:var(--action);background:var(--action-bg)}
+.drop p{margin:0;color:var(--text-2)}
+.knitdeco{aspect-ratio:4/3;border-radius:var(--r-stage);background:var(--sunk);display:grid;place-items:center;overflow:hidden}
+.card{background:var(--surf);border:1.5px solid var(--line);border-radius:var(--r-panel);padding:var(--s6)}
+.card.err{border-color:var(--error);background:var(--error-bg)}.card.err h2{color:var(--error);margin:0 0 var(--s2);font-family:var(--serif);font-size:var(--t-h2)}
+.acts{display:flex;flex-wrap:wrap;gap:var(--s3);margin-top:var(--s4)}
+.skel{height:14px;border-radius:7px;background:var(--sunk);margin:var(--s3) 0;animation:pz 1.1s infinite alternate}@keyframes pz{to{opacity:.4}}
+.slow{margin:var(--s3) 0 0;color:var(--text-2)}
+/* ===== Вопрос про машину ===== */
+.ask{max-width:1000px;margin:0 auto;padding:var(--s3) var(--s7) var(--s8);display:grid;grid-template-columns:320px minmax(0,1fr);gap:var(--s8);align-items:start}
+.ask h1{font-family:var(--serif);font-size:var(--t-h1);line-height:1.15;margin:0 0 var(--s2)}
+.srcbox{background:var(--sunk);border-radius:var(--r-panel);padding:var(--s4);display:grid;place-items:center;min-height:240px}
+.srcbox canvas{max-width:100%;image-rendering:pixelated}
+.srcmeta{font-size:var(--t-cap);color:var(--text-2);margin-top:var(--s2);text-align:center;overflow-wrap:anywhere}
+/* ===== Поля (общие блоки) ===== */
+.opts{display:grid;gap:var(--s3)}.opts.two{grid-template-columns:1fr 1fr}
+.opt{display:flex;gap:var(--s3);align-items:flex-start;padding:var(--s3) var(--s4);min-height:var(--h-btn-big);border:1.5px solid var(--line);border-radius:var(--r-card);background:var(--surf);cursor:pointer}
+.opt:has(input:checked){border-color:var(--action);background:var(--action-bg)}
+.opt input{width:22px;height:22px;margin:1px 0 0;accent-color:var(--action);flex:none}.opt b{display:block}.opt small{display:block;color:var(--text-2);font-size:var(--t-cap)}
+.opt.line{align-items:center}
+.chips{display:flex;flex-wrap:wrap;gap:var(--s2)}.chip{position:relative}.chip input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.chip span{display:grid;place-items:center;min-width:64px;min-height:var(--h-btn);padding:0 var(--s4);border-radius:var(--r-pill);border:1.5px solid var(--border-ctrl);font-weight:600;background:var(--surf)}
+.chip input:checked+span{background:var(--text);border-color:var(--text);color:var(--bg)}.chip input:focus-visible+span{outline:2px solid var(--action);outline-offset:2px}
+.fld{display:grid;gap:6px;margin-top:var(--s3)}.fld>span:first-child{font-weight:600}
+.fld input,.fld select{min-height:var(--h-btn);padding:0 var(--s4);border:1.5px solid var(--border-ctrl);border-radius:var(--r-ctrl);background:var(--surf);width:100%;font-size:var(--t-body)}
+.fld .row{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap}.fld .row input{max-width:130px}.fld .row small{font-size:var(--t-cap);color:var(--text-2)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+.hint{color:var(--text-2);margin:var(--s3) 0 0;font-size:var(--t-small)}.warnline{color:var(--warn);background:var(--warn-bg);padding:var(--s2) var(--s3);border-radius:var(--r-ctrl)}
+.ferr{color:var(--error);margin:6px 0 0;font-weight:500}
+.qh{font-weight:700;font-size:var(--t-lead);margin:var(--s6) 0 var(--s3)}
+/* ===== Результат ===== */
+.res{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);padding:0 var(--s7) var(--s3);gap:var(--s3);max-width:1280px;margin:0 auto;width:100%;height:100%;min-height:0}
+.say{font-family:var(--serif);font-size:var(--t-say);line-height:1.5;margin:0}
+.say .pill{font-family:var(--font);font-size:17px;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 var(--s3);margin:2px 0;border-radius:var(--r-pill);border:1.5px dashed var(--border-ctrl);background:var(--surf);cursor:pointer;vertical-align:middle;font-weight:600}
+.say .pill svg{width:16px;height:16px;color:var(--text-2)}
+@media (hover:hover) and (pointer:fine){.say .pill:hover{border-style:solid;border-color:var(--action)}}
+.saym{display:none}
+.bar{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+#app .seg{display:inline-flex;background:var(--sunk);border-radius:var(--r-pill);padding:var(--s1);gap:2px;overflow-x:auto;max-width:100%}
+#app .seg button{flex:none;min-height:var(--h-tap);padding:0 var(--s4);border:0;border-radius:var(--r-pill);background:none;cursor:pointer;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+#app .seg button[aria-pressed=true],#app .seg button[aria-selected=true]{background:var(--surf);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+#app .seg i{width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--ok)}  /* без нарушений — кольцо */
+#app .seg i.bad{box-shadow:none;background:var(--error);border-radius:2px;transform:rotate(45deg) scale(.85)} /* с нарушениями — ромб */
+.master{display:inline-flex;align-items:center;gap:var(--s3);min-height:var(--h-btn);padding:0 var(--s4) 0 var(--s3);border-radius:var(--r-pill);border:1.5px solid var(--border-ctrl);background:var(--surf);cursor:pointer;font-weight:600}
+.master i{width:40px;height:24px;border-radius:12px;background:var(--border-ctrl);position:relative;flex:none}.master i:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s var(--ease)}
+.master[aria-checked=true]{border-color:var(--action);background:var(--action-bg)}.master[aria-checked=true] i{background:var(--action)}.master[aria-checked=true] i:after{transform:translateX(16px)}
+.ls{display:none}
+.stagebox{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:var(--s5);min-height:0}
+.show{position:relative;border-radius:var(--r-stage);background:var(--cv-bg);overflow:hidden;min-height:300px}
+.knitw{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:var(--s2);overflow:auto;padding:var(--s3) var(--s5)}
+.kin{flex:none;display:flex;gap:var(--s2);align-items:stretch}
+.ribbon{position:relative;width:8px;border-radius:4px;background:rgba(127,127,127,.25)}
+.ribbon b{position:absolute;left:0;right:0;background:var(--cv-viol);min-height:2px}
+.klab{flex:none;display:flex;flex-wrap:wrap;justify-content:center;gap:0 var(--s4);text-align:center;font-size:var(--t-cap);color:var(--cv-label)}
+.knote{flex:none;margin:0;max-width:100%;text-align:center;font-size:var(--t-cap);line-height:1.35;color:var(--cv-label);overflow-wrap:anywhere}
+.cvbox{position:absolute;inset:0}
+.aside{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:var(--s3);min-height:0}
+.notes{display:flex;flex-direction:column;gap:var(--s3);overflow:auto;min-height:0}
+.note{border-radius:var(--r-panel);padding:var(--s4);background:var(--surf);border:1.5px solid var(--line)}
+.note h2{font-size:17px;margin:0 0 6px}
+.note.bad{border-color:var(--error);background:var(--error-bg)}
+.okline,.badline{display:flex;gap:var(--s2);align-items:center;margin:0 0 var(--s2);font-weight:700}.okline{color:var(--ok)}.badline{color:var(--error)}
+.okline svg,.badline svg{flex:none}
+.vrows{display:flex;flex-wrap:wrap;gap:6px}.vr{min-height:var(--h-tap);padding:0 var(--s4);border-radius:var(--r-pill);border:1.5px solid var(--error);background:var(--surf);color:var(--error);cursor:pointer;font-weight:600}
+.warn{color:var(--warn);background:var(--warn-bg);padding:var(--s2) var(--s3);border-radius:var(--r-ctrl);margin:var(--s2) 0 0;font-size:var(--t-small)}
+.thin{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3)}
+.tbtn{min-height:var(--h-tap);padding:0 var(--s4);border-radius:var(--r-pill);border:1.5px solid var(--border-ctrl);background:var(--surf);cursor:pointer;font-weight:600}
+.tbtn[aria-pressed=true]{background:var(--text);color:var(--bg);border-color:var(--text)}
+.legend{display:inline-block;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #1a1a1a;vertical-align:-1px;margin-right:4px}
+.dlbox{display:grid;gap:var(--s2)}.dlbox small{color:var(--text-2);font-size:var(--t-cap);text-align:center;overflow-wrap:anywhere}
+.fname{font-family:var(--mono);font-size:var(--t-cap)}
+/* ===== Режим мастера ===== */
+.pill-tools{position:absolute;left:50%;bottom:var(--s3);transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:6px;border-radius:var(--r-pill);background:var(--surf);box-shadow:0 8px 28px rgba(0,0,0,.28);z-index:5;max-width:calc(100% - 16px)}
+.pill-tools .tool{display:grid;place-items:center;width:var(--h-tool);height:var(--h-tool);border-radius:50%;border:0;background:none;cursor:pointer;color:var(--text);flex:none}
+.pill-tools .tool span{display:none}.pill-tools .tool.on{background:var(--action);color:var(--on-action)}.pill-tools .tool:disabled{opacity:.35;cursor:default}
+.pill-tools .sep{width:1px;height:28px;background:var(--line);margin:0 var(--s1);flex:none}
+.cur-sw{width:var(--h-tool);height:var(--h-tool);border-radius:50%;border:3px solid var(--surf);box-shadow:0 0 0 1.5px var(--border-ctrl);background:var(--c);cursor:pointer;flex:none}
+.pop{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);z-index:6;background:var(--surf);border-radius:var(--r-panel);padding:var(--s4);box-shadow:0 10px 30px rgba(0,0,0,.3);width:min(380px,calc(100% - 16px))}
+.pop h3{margin:0 0 var(--s2);font-size:var(--t-small)}
+.pal{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.sw{display:flex;align-items:center;gap:6px;min-height:var(--h-tap);padding:4px var(--s3) 4px 4px;border-radius:var(--r-pill);border:1.5px solid var(--line);background:var(--surf);cursor:pointer;font-size:var(--t-cap)}
+.sw i{width:34px;height:34px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}.sw.on{border-color:var(--text);box-shadow:0 0 0 1.5px var(--text)}
+.vgrid{display:flex;flex-wrap:wrap;gap:var(--s1)}.vgrid .tool{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:64px;min-height:56px;border-radius:var(--r-ctrl);border:1.5px solid transparent;background:none;cursor:pointer;font-size:var(--t-cap)}.vgrid .tool.on{border-color:var(--action);background:var(--action-bg)}
+.rowchip{position:absolute;top:var(--s3);left:var(--s3);z-index:5;display:flex;flex-wrap:wrap;gap:2px var(--s3);max-width:calc(100% - 24px);padding:6px var(--s3);border-radius:var(--r-card);background:var(--surf);box-shadow:0 2px 10px rgba(0,0,0,.2);font-size:var(--t-cap)}
+.vgrid .mredo,.vgrid .mhand{display:none}
+#app .seg .cnt{font-style:normal;font-size:var(--t-cap);line-height:20px;min-width:22px;padding:0 6px;border-radius:var(--r-pill);background:var(--error-bg);color:var(--error);text-align:center}
+#app .seg .cnt.ok{background:var(--ok-bg);color:var(--ok)}
+.vtw{max-height:264px;overflow:auto;border-radius:var(--r-ctrl);background:var(--surf);border:1px solid var(--line);overscroll-behavior:contain}
+table.vt{width:100%;border-collapse:collapse;font-size:var(--t-small)}
+.vt th{position:sticky;top:0;z-index:1;background:var(--surf);text-align:left;font-weight:500;font-size:var(--t-cap);color:var(--text-2);padding:6px var(--s2);border-bottom:1px solid var(--line)}
+.vt td:last-child{width:1%}.vt td{padding:0 var(--s2);height:var(--h-tap);border-top:1px solid var(--line)}
+.vt tr[data-act]{cursor:pointer}@media (hover:hover) and (pointer:fine){.vt tbody tr:hover td{background:var(--sunk)}}
+.vt tr.cur td{background:var(--action-bg)}
+.vt button{background:none;border:0;padding:0;min-height:var(--h-tap);min-width:var(--h-tap);text-align:left;font-weight:700;cursor:pointer}
+.vt .n{color:var(--error);font-weight:600;white-space:nowrap}
+.vt .sws{display:flex;flex-wrap:nowrap;gap:3px}.vt .sws i{flex:none;width:16px;height:16px;border-radius:4px;background:var(--c);box-shadow:inset 0 0 0 1px var(--border-ctrl)}
+.rowchip .bad{color:var(--error);font-weight:700}.rowchip .good{color:var(--ok)}
+/* ===== Боковая панель настроек / окно проверки ===== */
+.scrim{position:absolute;inset:0;z-index:29;background:rgba(0,0,0,.28);animation:fade .2s var(--ease)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:400px;z-index:30;background:var(--surf);box-shadow:-12px 0 36px rgba(0,0,0,.22);display:flex;flex-direction:column;animation:slidein .25s var(--ease)}
+@keyframes slidein{from{transform:translateX(24px);opacity:0}}@keyframes fade{from{opacity:0}}
+.dh{display:flex;align-items:center;justify-content:space-between;padding:var(--s3) var(--s3) var(--s3) var(--s6);border-bottom:1px solid var(--line)}
+.dh h2{margin:0;font-family:var(--serif);font-size:var(--t-h2)}
+.db{overflow:auto;padding:var(--s1) var(--s6) var(--s6);flex:1;min-height:0}
+.db section{padding:var(--s4) 0;border-bottom:1px solid var(--line)}.db section h3{margin:0 0 var(--s3);font-size:17px}
+.db section.hl{animation:hl 1.2s var(--ease)}@keyframes hl{from{background:var(--action-bg)}to{background:transparent}}
+.df{padding:var(--s3) var(--s6);border-top:1px solid var(--line)}.df .btn{width:100%}
+/* ===== Окно перед скачиванием ===== */
+.mwrap{position:absolute;inset:0;z-index:80;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:var(--s4)}
+.modal{position:relative;max-width:520px;width:100%;background:var(--surf);color:var(--text);border-radius:var(--r-stage);padding:var(--s6);max-height:90%;overflow:auto}
+.modal h2{font-family:var(--serif);margin:0 40px var(--s2) 0;font-size:var(--t-h2);line-height:1.25}.modal p{color:var(--text-2);margin:0 0 var(--s3)}.mlist{padding-left:var(--s5);margin:0 0 var(--s4)}.mbtns{display:grid;gap:var(--s2)}.mbtns .btn{width:100%}
+.mx{position:absolute;top:10px;right:10px;width:var(--h-tap);height:var(--h-tap);border:0;background:none;font-size:28px;cursor:pointer;color:var(--text)}
+
+/* ===== Телефон: ширина контейнера до 760 ===== */
+@container app (max-width:760px){
+ .hd{padding:var(--s3) var(--s4)}.brand{font-size:19px}.hd .hidem{display:none}
+ .hero{grid-template-columns:minmax(0,1fr);padding:var(--s1) var(--s4) var(--s6);gap:var(--s4);min-height:0}.hero h1{font-size:30px}.lead{font-size:var(--t-body);margin-bottom:var(--s4)}.knitdeco{display:none}
+ .drop{padding:var(--s6) var(--s4)}
+ .ask{grid-template-columns:minmax(0,1fr);padding:var(--s1) var(--s4) var(--s6);gap:var(--s3)}.ask h1{font-size:24px}.srcbox{min-height:0;padding:var(--s2)}.srcbox canvas{max-height:110px}.ask .acts{display:none}
+ .opts.two{grid-template-columns:minmax(0,1fr)}
+ .res{padding:0 var(--s3) var(--s2);gap:var(--s2)}
+ .say{display:none}
+ .saym{display:flex;align-items:center;gap:var(--s2);width:100%;min-height:var(--h-btn);padding:var(--s2) var(--s3) var(--s2) var(--s4);border-radius:var(--r-card);border:1.5px dashed var(--border-ctrl);background:var(--surf);cursor:pointer;text-align:left}
+ .saym span{flex:1;min-width:0;font-size:var(--t-body);line-height:1.35}.saym b{color:var(--action);font-weight:600;flex:none}
+ .lf{display:none}.ls{display:inline}.bar{gap:6px}.bar .sp{display:none}.bar>.seg:first-child{flex-basis:100%}#app .seg button{padding:0 var(--s3)}
+ .stagebox{grid-template-columns:minmax(0,1fr)}.aside{display:none}
+ .show{border-radius:18px;min-height:0}
+ .knitw{padding:var(--s3)}
+ .foot{display:flex;gap:var(--s2);padding:var(--s2) var(--s3) var(--s3);background:var(--surf);border-top:1px solid var(--line)}.foot .btn.primary{flex:1}
+ .vb{display:flex;align-items:center;gap:6px;min-height:var(--h-btn);padding:0 var(--s3);border-radius:var(--r-pill);border:1.5px solid var(--error);color:var(--error);background:var(--surf);font-weight:700;cursor:pointer}
+ .vb.ok{border-color:var(--ok);color:var(--ok)}
+ .drawer{top:auto;left:0;width:auto;max-height:82%;border-radius:22px 22px 0 0;box-shadow:0 -12px 36px rgba(0,0,0,.3);animation-name:slideup}
+ @keyframes slideup{from{transform:translateY(24px);opacity:0}}
+ .dh{padding-left:var(--s4)}.db{padding:0 var(--s4) var(--s4)}.df{padding:var(--s2) var(--s4) var(--s3)}
+ .pill-tools{bottom:var(--s2);gap:0;padding:var(--s1)}.pill-tools .tool,.cur-sw{width:46px;height:46px}.pill-tools .sep{margin:0 1px}
+ .pill-tools [data-act=redo]{display:none}.vgrid .mredo{display:flex}
+ .foot .btn{white-space:nowrap;min-width:0}
+ .foot .btn.primary{padding:0 var(--s4);overflow:hidden;text-overflow:ellipsis}
+ .pop{bottom:68px}
+ .rowchip{top:6px;left:6px}
+}
+/* Очень узкий экран (320): кнопки внизу и панель мастера без обрезки */
+@container app (max-width:350px){
+ .foot{gap:6px}.foot .btn.primary svg{display:none}.foot .btn.primary{padding:0 var(--s3)}
+ .pill-tools [data-v=hand]{display:none}.vgrid .mhand{display:flex}
+ .bar .master{padding-right:var(--s3)}
+}
+@media (prefers-reduced-motion:reduce){.drawer,.scrim,.db section.hl{animation:none}}
+</style></head>
+<body>
+<div class="stage"><div id="app"></div></div>
+<script>
+const CORGI_B64='Qk2oPAAAAAAAAFIAAAAoAAAAnAAAAGMAAAABAAgAAAAAAFY8AAAkFgAAJBYAAAcAAAAHAAAAKqAAAJKBwwAhIyUAZ5/ZAFReagDV2eEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQEBAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAQEBAAAAAAAAAAAAAAAAAAAAAAEBQUFBAUFBAUEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBAUEBQQAAAAAAAAAAAAAAAAAAAAEBQUFBAUFBAUEAAQEBAQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBQUFBQQAAAQEBAQEAAAAAAAAAAAEBQUFBQUFBQUEBAUEBQUFBAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBQUEBAAABAQFBQUEAAAAAAAAAAAFBQUFBQUFBAQEBQUEBQUFBAUEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBQUEAAAEBQUFBQQEAAAAAAAAAAQFBQUFBQUEBAAEBQUFBQUFBQUEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAUFBQUFBAQFBQUFBQQAAAAAAAAAAAQFBQUFBQUEAAAEBQUFBQUFBQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAUFBQUFBAQEBAQEBAQEBAAEBAQABAUFBQUFBQQAAAAEBQUFBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwUFBQUFBQQEBAUFBQUFBQUFBAQEBAUFBQUFBQQEAAAEBQUFBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMFBQUFBQUEBQUFBQUFBQUFBQUEAwMFBQUFAwMEBAQEBQUFBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMDAwMFBQUEBQUFBQUFBQUFBQUEAwMDAwMDAwMEBQQEAwUFBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMDAwMDAwUFBQUFBQUFBQUFBQQDAwMDAwMDAwMEBQUFBAMDBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQDAwMDAwMDAwMDAwMDAwUFBQUFBQQDAwMDAwMDAwMFBQUFBAQDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwQFBQUFBQQDAwMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwQFBQUFBQUEAwMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUFBQUFBQUFBAMDAwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUFBQUFBQUFBAMDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUFBQUFBQUFBQMDAwMDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUFBQUFBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwQDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQUFBQUFBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQUFBQUFBQUFBQUDAwMDAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMFBQQEBAQFBQUFBQUFAwMDAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMFBAEBAQQEBQUFBQUFAwMDAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwUEAQEBBQUEBAUFBQUFAwMDAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQQEAQEBAQEBBAUFBQUFBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDBQQBAQEBAQEBAQQFBQUFBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMFBQQBAQEBAQEBAQQFBQUFBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMFBQQBAQEBBAEBAQQEBAUFBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDAwMDAwMDAwMDAwUFBQQBAQEBBAEBAQQFBQQFBQUDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMDAwMDAwMDAwMDAwMDAwMFBQUFBAQBAQEBBAEBAQQFBQUEBAUDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAMDAwMDAwMDAwMDAwMDBAUFBQUEBQQEAQEBBAEBBAIFBQUFBQQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAQEBAQDAwQDAwMEAQUFBAQFBQQEBAQEBAQEBAICBQUFBQUFBQUEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAEBAQEBQUEBQUFBQICAgIEBAQCAgUFAgIFBQUFBQUFBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBQQEBQUFAgUFBQUCAgIFBQUFBQUCBQUFBQUFBQUEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQFBQUCBQUFBQUFAgUFBQUFBQUFBQUFBQUFBQUFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBQUFBQUFBQUFAgUFBQUFBQUFBQUFBQUFBQUFBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEBAQEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBQUFBQUFBQUFBQUFBQUFAgICBQUFBQUFBQUFBAQEAQEBAQEEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBQUFBQUFBQUFBQUFBQUCAgICAgUFBQUFBQQEAQEBAQEBAQEBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQFBQUFBQUFBQUFBQUFBQICAgICAgIFBQUFBAEBBAQEBAQEBAQEAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUFAwMDAwMFBQUFBQUFAgICAgICAgICBQUEAQEEAwMDAwMDAwMDBAQBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAUDAwMDBAQEBAQBBQUFAgICAgICAgICBQQBAQQDAwICAgMDAwMDAwQBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDBAQEBAEBAQEBBAUFAgICAgICAgICBAEBAgICAgIFBQIDAwMDAwMEAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMEBAEBAQEBAQEBAQQFAgICAgIEBAIFBAEEAgICBAQFBQUCAwMDAwMEAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQBAQEBAgICAgICBAEEBQICBAQCAgUEAQECAgICBQQEBQUFAgMDAwMEAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAEBAwMCBQICAgICAgQBBAUCAgIFBQUEAQECAgICAgIEBAUFAgMDAwMDBAEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQQDAwIFBQQEAgICBQIEAQQFBQUFBQUEAQQCAgICAgIEBAUFAgMDAwMDBAEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQBBAMDAwIFBAQCAgICBQICAQEEBQUFBQUEAQQCAgICAgICBAUFAgMDAwMDBAEBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQBBAMDAgUFBAQCAgICAgICBAEEBQUFBQUEAQQCAgICAgIEBAUFAgMDAwMDAwQBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBBAMDAgUFBAQCAgICAgICBAEBBAUFBQQBAQQCAgIEBAIEBAUFAgMDAwMDAwQBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAwMDAgUFBAQCAgICAgICAwQBAQQEBAEBAQQCAgIEBQQEBAUFAgMDAwMDAwQBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAgUFBAQEAgICAgICAwQBAQEBAQEBAQQCAgIFBQQEBQUCAwIDAwMDBAQBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAgUFBQQEAgIFBAICAwQBAQEBAQEBAQECAgQEBAQFBQIDAgMDAwMDBAQBAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAwIFBQQEBAQFBQICAwQBAQEBBAQBAQEEAgICBQUFAgMCAwMEBAQEAQEBAQEBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAwIFBQUEBAQFBQQCAwQBAQQBBQUEBAQBAQQCAgICBAQEBAQEAQEBAQEBAQEBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAgMCBQUFBQQEBAICAwQBBAUFBQUDAwQEAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEEAwMDAwIDAgIFBQUFAgIDBAEEAwUFBQMDAwMDBAQBAQEBAQEBAQEBAQEEBAQEBAQBAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQEBBAMDAwMCAwMCAgICAwMEAQQDAwUFBQMDAwMDAwMEBAQEBAQEBAQEBAQDBAQBAQUEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQEBBAMDAwMDAwMDAwMDBAQBBAMDAwUFBQMDAwMDAwMDAwMDAwMDBAQDAwMDBAEBAQUDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQEBBAMDAwMDAwMDBAQEAQEEAwMDAwMFBQMDAwMDAwMDAwMDAwMEBAMDAwMDBAEBAQUFAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQEBBAQEBAQEBAQEAQEBBAQDAwMDAwMFBQUDAwMDAwMDAwMDAwQEAwMDAwMEBAEBAQEFAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAQEBAQEBAQEBAQEBAQQEAwMDAwMDAwMFBQUDAwMDAwMDAwMDBAQDAwMDAwMEAQEBAQEFAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAQEBAQEBAQEBAQQEBAMDAwMDAwMDAwMFBQUDAwMDAwMDAwQEAwMDAwMDBQMEAQEBAQEFAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQBAQEBAQEEBAQEBAMDAwMDAwMDAwMDAwMFBQUDAwMDAwMDAwMDAwMDAwMDAwQBAQEBAQEFBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQBAQEBBAQEAwMDAwMEBAQEAwMDAwMDAwMFBQUDAwMDAwMDAwMDAwMDAwMFBAQBAQEBAQEBBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAEBAQQEAQQDAwMDAwQEAQEBBAMDAwMDAwMFBQUDAwMDAwMDAwMDAwMDAwUDBAEBAQEBAQEBBQMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAEEBAEBAQEEAwMDBAQBAQEFAQQDAwMDAwUFBQUFAwMDAwMDAwMDAwMDBQMEAQEBAQEBAQEBBQUDAwMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQBAQEBAQEEBAMEAQEBAQEBAQEEAwMDAwUFBQUFAwMDAwMDAwMDAwMFAwQBAQEBAQEBAQEFBQUDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMBAQEBAQEBBAMEAQUFAQEBAQEEAwMDAwUFBQUFAwMDAwMDAwMDAwUDBAQBAQEBAQEBAQEFBQUDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAwEBAQEBAQEBBAQBAQEFAQEBAQEEAwMDAwUFBQUFBQMDAwMDAwMDBQMEAwQEAQEBAQEBAQEFBQUFAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAwUBAQEBAQEBBAEFAQEBAQEBBQEBBAMDAwUFBQUFBQMDAwMDAwUDAwQDAwMEAQEBAQEBAQEFBQUDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUBAQEBAQEBBAEBAQEBAQEEAQEBBAMDAwUFBAQEBQMDAwMFAwMEBAMDAwMEBAEBAQEBAQUFBQUFAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUBAQEBAQEBBAEBAQEBBQEBBAEEBAQEAwUEAQEBBAMDBQMDAwQEBAMDAwMDBAEBAQEBBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUBAQEBAQEEBAEBAQEBBQEBAQEEAQEEBAQBAQEBAQQEAwMEBAAAAAQDAwMDBAQDAQEBBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUFAQEBAQEEAQEBAQQEBAEBAQQFBQEBBAEBAQEBAQEBBAQAAAAAAAAEAwMDAwQDAwEFBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUFAQEBAQEEAQEFBQEBBAQBBAEBAQEBBAEEBAEBAQEBBAAAAAAAAAAABAMDAwQEAwMFBQUFBQUDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUFBQEBAQEEAQEBAQEBAQEEAQEBAQEBBAQBAQQBAQEBBAAAAAAAAAAAAAQDAwMEAwMDBQUFBQMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMFBQUBAQEEAQEBAQEBAQEEAQUFAQUBBAEBBQEBAQUBBAAAAAAAAAAAAAAEAwMEBAMDAwUFAwMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMFBQUBAQEEAQUBAQEFAQEEAQUFBQEEAQEBAQEBAQEBBAAAAAAAAAAAAAAABAMDBAMDAwMDAwMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwUFBQUFAQEBBAUBAQEFAQEEBAUFBQEEAQUBAQEBAQEBBAAAAAAAAAAAAAAAAAAEAwQDAwMDAwMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwMFBQUFBQEBAQQBAQEBBAQDBAEBAQQBBAEBAQEFAQEBBAAAAAAAAAAAAAAAAAAAAAQEAwMDAwMDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwUDBQUFBQUFBQUEBAQEAwMEAAAABAEBAQQBAQUFAQEBBAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDBQUFBQUFBQUDAwQDAwMAAAAAAAQBAQEEAQEBAQEEAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwUFBQUFBQUDAwQDAwQAAAAAAAQBAQEBAQEBAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwUFBQUFBQMDAwQDAwAAAAAAAAQBBQUBAQEBAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwMDAwMFBQUFBQMDAwQDBAAAAAAAAAAEAQUBAQUFAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDBQUFAwMDBAMEAAAAAAAAAAAEAQEBAQEFBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDBAQEAAAAAAAAAAAABAEBAQEBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDAwMDAwMDBAQAAAAAAAAAAAAAAAQFAQEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQDAwMDAwMDAwMDBAAAAAAAAAAAAAAAAAAEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMDAwMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAwMDAwMDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAwMDAwMDAwQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAMDAwMDBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDAwMEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+'use strict';
+/* ===== ЯДРО ПРОТОТИПА П-48 (одинаковое в вариантах А, Б, В) =====
+   Конвертер упрощён: уменьшение + сведение к ближайшим цветам. Это прототип, не продакшн-код.
+   Правила раскладки, нарушителей и BMP — по требованиям П-48 v5 (RULE-006…080). */
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function plural(n,a,b,c){const m10=n%10,m100=n%100;return(m10===1&&m100!==11)?a:(m10>=2&&m10<=4&&(m100<10||m100>=20))?b:c}
+const fmtK=k=>k.toFixed(2).replace('.',',');
+const num=n=>n.toLocaleString('ru-RU');
+function ranges(a){const o=[];for(let i=0;i<a.length;){let j=i;while(j+1<a.length&&a[j+1]===a[j]+1)j++;o.push(i===j?{a:a[i],t:''+a[i]}:{a:a[i],b:a[j],t:a[i]+'–'+a[j]});i=j+1}return o}
+const rangesText=a=>ranges(a).map(r=>r.t).join(', ');
+
+const MACHINES=[
+ {id:'lanati',name:'Lanati 156',needles:[156],note:'итальянская, 156 игл'},
+ {id:'rainbowe',name:'Rainbowe RB-6FTP',needles:[144,168],note:'144 и 168 игл'},
+ {id:'other',name:'Другая машина',needles:[96,108,120,132,144,156,168,176,200],note:'96–200 игл, можно своё число',custom:true}];
+const SOCK={168:[['36–40',330],['39–41',355],['41–45',380]],200:[['41–45',380]],144:[['детский',320]],156:[['женский',380]]};
+const kFor=(n,w)=>w==='glad'?(n===168?1.33:n===200?1.22:1.15):(n===200?0.92:1.00);
+const ERRORS=[
+ {t:'Не удалось прочитать рисунок',d:'Файл повреждён или сохранён не до конца. Откройте его в редакторе, сохраните заново как PNG — или выберите другой.'},
+ {t:'Файл пустой — выберите другой',d:'В файле 0 байт: скорее всего, он не докачался или не сохранился.'},
+ {t:'Такой формат не открывается',d:'Подходят PNG, JPG, BMP и WebP. Фото с iPhone (.heic) сохраните как JPEG или PNG.'},
+ {t:'Файл слишком большой',d:'Нужно не больше 50 МБ, 50 млн точек и 16 384 px по стороне. Уменьшите рисунок и загрузите снова.'},
+ {t:'На рисунке не найден мотив: всё одного цвета',d:'Проверьте, тот ли файл выбран: программа не нашла ни одной точки, кроме фона.'},
+ {t:'Файл не загрузился, проверьте связь',d:'Выбранные машины и числа игл сохранены — после «Повторить» начнём с того же места.',retry:true}];
+
+function freshState(){return{src:null,base:null,baseDirty:true,loading:false,error:null,errI:0,
+ machines:new Set(),needles:new Set(),custom:[],notice:'',
+ weave:'glad',kManual:null,applyK:false,heightMode:'motif',sockRows:{},topOffset:29,
+ layout:'mirror',side:'right',wManual:null,rManual:null,colors:5,bgOverride:null,
+ motifEdits:new Map(),fieldEdits:new Map(),undo:[],redo:[],
+ edit:false,tool:'pencil',color:1,grid:true,sym:false,cur:null,errs:{},motif:null,files:[],dims:null,hover:null}}
+let S=freshState();
+let App={render(){},act(){return false},onEdit(){}}; // задаёт вариант
+
+/* ---------- чтение рисунка ---------- */
+const ERR=i=>Object.assign(new Error(ERRORS[i].t),{ui:ERRORS[i]});
+const loadImg=url=>new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(ERR(0));im.src=url});
+async function readFile(file){
+ if(file.size===0)throw ERR(1);
+ const nm=file.name.toLowerCase();
+ if(/\.(heic|heif)$/.test(nm))throw ERR(2);
+ if(!/\.(png|jpe?g|bmp|webp)$/.test(nm)&&!/image\/(png|jpeg|bmp|webp)/.test(file.type))throw ERR(2);
+ if(file.size>50*1024*1024)throw ERR(3);
+ const url=URL.createObjectURL(file);
+ try{const im=await loadImg(url);if(Math.max(im.naturalWidth,im.naturalHeight)>16384||im.naturalWidth*im.naturalHeight>5e7)throw ERR(3);return fromImage(im,file.name.replace(/\.[^.]+$/,''))}
+ finally{URL.revokeObjectURL(url)}
+}
+function fromImage(im,name){
+ let w=im.naturalWidth,h=im.naturalHeight;const c=document.createElement('canvas');
+ c.width=w;c.height=h;let x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);
+ let d=x.getImageData(0,0,w,h).data;const seen=new Set();for(let i=0;i<d.length&&seen.size<=100000;i+=4)seen.add(d[i]<<16|d[i+1]<<8|d[i+2]);
+ const shades=seen.size,pixel=w<=200&&h<=1000&&shades<=16;
+ if(!pixel&&Math.max(w,h)>360){const s=360/Math.max(w,h);const W=Math.max(1,Math.round(w*s)),H=Math.max(1,Math.round(h*s));
+  c.width=W;c.height=H;x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingQuality='high';x.fillStyle='#fff';x.fillRect(0,0,W,H);x.drawImage(im,0,0,W,H);d=x.getImageData(0,0,W,H).data;w=W;h=H}
+ return{name:name.replace(/\s+/g,'_'),w,h,data:d,pixel,shades,ow:im.naturalWidth,oh:im.naturalHeight};
+}
+function kmeans(d,n,k){
+ const step=Math.max(1,Math.floor(n/15000)),sm=[];for(let i=0;i<n;i+=step)sm.push(i*4);
+ const C=[[d[0],d[1],d[2]]],dist=(o,c)=>{const a=d[o]-c[0],b=d[o+1]-c[1],e=d[o+2]-c[2];return a*a+b*b+e*e};
+ while(C.length<k){let best=-1,bi=0;for(const o of sm){let m=1e9;for(const c of C)m=Math.min(m,dist(o,c));if(m>best){best=m;bi=o}}if(best<120)break;C.push([d[bi],d[bi+1],d[bi+2]])}
+ for(let it=0;it<8;it++){const s=C.map(()=>[0,0,0,0]);for(const o of sm){let bi=0,bm=1e9;C.forEach((c,j)=>{const m=dist(o,c);if(m<bm){bm=m;bi=j}});const t=s[bi];t[0]+=d[o];t[1]+=d[o+1];t[2]+=d[o+2];t[3]++}
+  s.forEach((t,j)=>{if(t[3])C[j]=[t[0]/t[3],t[1]/t[3],t[2]/t[3]]})}
+ const idx=new Uint8Array(n);for(let i=0;i<n;i++){let bi=0,bm=1e9;for(let j=0;j<C.length;j++){const m=dist(i*4,C[j]);if(m<bm){bm=m;bi=j}}idx[i]=bi}
+ return{palette:C.map(c=>c.map(Math.round)),idx};
+}
+function prepareBase(){
+ const{w,h,data:d,pixel}=S.src,n=w*h;let palette=[],idx=new Uint8Array(n);
+ if(pixel){const m=new Map();for(let i=0;i<n;i++){const key=d[i*4]<<16|d[i*4+1]<<8|d[i*4+2];let v=m.get(key);if(v===undefined){v=palette.length;m.set(key,v);palette.push([d[i*4],d[i*4+1],d[i*4+2]])}idx[i]=v}}
+ else({palette,idx}=kmeans(d,n,S.colors));
+ const cnt=palette.map(()=>0);for(let x=0;x<w;x++){cnt[idx[x]]++;cnt[idx[(h-1)*w+x]]++}for(let y=0;y<h;y++){cnt[idx[y*w]]++;cnt[idx[y*w+w-1]]++}
+ let bg=cnt.indexOf(Math.max(...cnt));if(S.bgOverride!=null&&S.bgOverride<palette.length)bg=S.bgOverride;
+ let x0=w,y0=h,x1=-1,y1=-1;for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(idx[y*w+x]!==bg){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+ if(x1<0)throw ERR(4);
+ S.base={palette,idx,w,h,bg,bx:x0,by:y0,bw:x1-x0+1,bh:y1-y0+1};S.baseDirty=false;
+ if(S.color===bg||S.color>=palette.length)S.color=bg===0?1:0;
+}
+
+/* ---------- машины и иглы ---------- */
+function available(){const s=new Set();for(const m of MACHINES)if(S.machines.has(m.id)){m.needles.forEach(n=>s.add(n));if(m.custom)S.custom.forEach(n=>s.add(n))}return s}
+const selected=()=>[...S.needles].filter(n=>available().has(n)).sort((a,b)=>a-b);
+const machinesFor=N=>MACHINES.filter(m=>S.machines.has(m.id)&&(m.needles.includes(N)||(m.custom&&S.custom.includes(N)))).map(m=>m.name);
+function setMachine(id,on){
+ const before=available();on?S.machines.add(id):S.machines.delete(id);const after=available();
+ if(on){const m=MACHINES.find(m=>m.id===id);if(m.needles.length<=2)m.needles.forEach(n=>S.needles.add(n))} // допущение: у машины с 1–2 форматами они отмечаются сразу
+ const gone=[...S.needles].filter(n=>before.has(n)&&!after.has(n));gone.forEach(n=>S.needles.delete(n));
+ S.notice=gone.length?`${gone.join(', ')} ${plural(gone[gone.length-1],'иглы','игл','игл')} нет у выбранных машин — снято`:'';
+}
+const minNeedle=()=>{const s=selected();return s.length?s[0]:null};
+
+/* ---------- мотив и файлы ---------- */
+function dims(){
+ const b=S.base,pix=S.src.pixel,W=S.wManual??(pix?b.bw:Math.max(1,Math.floor((minNeedle()||156)/2)-6));
+ const R0=pix&&W===b.bw?b.bh:Math.max(1,Math.round(W*b.bh/b.bw)),useK=!pix||S.applyK;
+ const Kt=kFor(minNeedle()||156,S.weave),K=useK?(S.kManual??Kt):1,Rs=Math.max(1,Math.round(R0*K)),R=S.rManual??Rs;
+ return{W,R,R0,Rs,K,Kt,useK,pix,suggested:pix?b.bw:Math.max(1,Math.floor((minNeedle()||156)/2)-6)};
+}
+function buildMotif(){
+ const b=S.base,D=S.dims=dims(),{W,R}=D,idx=new Uint8Array(W*R),P=b.palette.length;
+ for(let y=0;y<R;y++)for(let x=0;x<W;x++){
+  const sx0=b.bx+Math.floor(x*b.bw/W),sx1=Math.max(sx0+1,b.bx+Math.floor((x+1)*b.bw/W)),sy0=b.by+Math.floor(y*b.bh/R),sy1=Math.max(sy0+1,b.by+Math.floor((y+1)*b.bh/R));
+  const st=Math.max(1,Math.floor((sx1-sx0)/6)),cnt=new Array(P).fill(0);let tot=0;
+  for(let yy=sy0;yy<sy1;yy+=st)for(let xx=sx0;xx<sx1;xx+=st){cnt[b.idx[yy*b.w+xx]]++;tot++}
+  let best=b.bg,bc=-1;for(let i=0;i<P;i++)if(i!==b.bg&&cnt[i]>bc){bc=cnt[i];best=i}
+  if(bc<tot*.3&&cnt[b.bg]>bc)best=b.bg;idx[y*W+x]=best}
+ for(const[k,c]of S.motifEdits){const[x,y]=k.split(',').map(Number);if(x<W&&y<R)idx[y*W+x]=c}
+ S.motif={w:W,h:R,idx};
+}
+function buildFor(N){
+ const{w:W,h:R,idx}=S.motif,bg=S.base.bg;
+ if(W>N)return[{key:N+'-x',N,err:`Мотив ${W} ${plural(W,'точка','точки','точек')} шире ${N} игл — файл не собран`,hint:`Уменьшите ширину мотива до ${N} или снимите ${N} игл. Обрезать мотив молча программа не будет.`}];
+ let H,top=1;if(S.heightMode==='sock'){H=S.sockRows[N]??(SOCK[N]?SOCK[N][SOCK[N].length-1][1]:null);top=S.topOffset;
+  if(!H)return[{key:N+'-x',N,err:`Для ${N} игл нет размеров носка`,hint:'Введите своё число рядов полотна.'}];
+  if(top+R>H)return[{key:N+'-x',N,err:`Мотив ${R} рядов с отступом ${top} не помещается в ${H} рядов: не хватает ${top+R-H}`,hint:'Уменьшите отступ или ширину мотива, или выберите полотно длиннее.'}]}
+ else H=R+2;
+ const half=Math.floor(N/2),wide=W>half,xr=Math.floor((half-W)/2),warns=[];
+ if(wide)warns.push('Мотив шире половины — на одну сторону носка не помещается, поставлен по центру');
+ if(S.heightMode==='sock'&&top+R>H/2)warns.push('Мотив заходит ниже середины полотна — на стопу');
+ const mk=(tag,rects)=>{const px=new Uint8Array(N*H).fill(bg);
+  for(const r of rects)for(let y=0;y<R;y++)for(let x=0;x<W;x++)px[(r.y0+y)*N+r.x0+x]=idx[y*W+(r.flip?W-1-x:x)];
+  return{key:N+'-'+tag,N,tag,w:N,h:H,px,rects,warns:warns.slice()}};
+ let F;const c=Math.floor((N-W)/2);
+ if(wide)F=S.layout==='pair'?[mk('прав',[{x0:c,y0:top}]),mk('лев',[{x0:N-c-W,y0:top,flip:1}])]:[mk(S.layout==='one'?(S.side==='right'?'прав':'лев'):'центр',[{x0:c,y0:top}])];
+ else if(S.layout==='mirror')F=[mk('зерк',[{x0:xr,y0:top},{x0:N-xr-W,y0:top,flip:1}])];
+ else if(S.layout==='one')F=[S.side==='right'?mk('прав',[{x0:xr,y0:top}]):mk('лев',[{x0:N-xr-W,y0:top}])];
+ else F=[mk('прав',[{x0:xr,y0:top}]),mk('лев',[{x0:N-xr-W,y0:top,flip:1}])];
+ F.forEach(f=>{applyField(f);analyze(f)});return F;
+}
+const inMotif=(f,x,y)=>{const{w:W,h:R}=S.motif;for(const r of f.rects)if(x>=r.x0&&x<r.x0+W&&y>=r.y0&&y<r.y0+R)return{mx:r.flip?W-1-(x-r.x0):x-r.x0,my:y-r.y0};return null};
+function applyField(f){for(const[k,c]of S.fieldEdits){const[n,rest]=k.split(':');if(+n!==f.N)continue;const[x,y]=rest.split(',').map(Number);if(y>=f.h)continue;
+ const xs=S.layout==='mirror'?[x,f.N-1-x]:f.tag==='лев'&&S.layout==='pair'?[f.N-1-x]:[x];for(const X of xs)if(!inMotif(f,X,y))f.px[y*f.w+X]=c}}
+function analyze(f){const bg=S.base.bg;f.rowCounts=[];f.viol=[];const used=new Set();
+ for(let y=0;y<f.h;y++){const s=new Set();for(let x=0;x<f.w;x++){const v=f.px[y*f.w+x];used.add(v);if(v!==bg)s.add(v)}f.rowCounts.push(s.size);if(s.size>4)f.viol.push(y+1)}f.colors=used.size}
+function rebuild(){
+ S.files=[];if(!S.src)return;
+ if(S.baseDirty)prepareBase();buildMotif();buildFiles();
+}
+function buildFiles(){S.files=selected().flatMap(buildFor);const ok=S.files.filter(f=>!f.err);if(!ok.find(f=>f.key===S.cur))S.cur=ok[0]?ok[0].key:null}
+const curFile=()=>S.files.find(f=>f.key===S.cur&&!f.err)||null;
+const okFiles=()=>S.files.filter(f=>!f.err);
+const fileName=f=>`${S.src.name}_${f.N}_${f.tag}.bmp`;
+function tagLabel(f){return f.tag==='зерк'?'обе стороны, зеркально':f.tag==='центр'?'по центру':S.layout==='pair'?(f.tag==='прав'?'правый носок':'левый носок, зеркально'):(f.tag==='прав'?'одна сторона: правая':'одна сторона: левая')}
+
+/* ---------- правка точек ---------- */
+let stroke=null;
+function beginStroke(){stroke=[]}
+function paint(f,x,y,c){if(!stroke||x<0||y<0||x>=f.w||y>=f.h)return;
+ const h=inMotif(f,x,y),W=S.motif.w;
+ if(h){const pts=[[h.mx,h.my]];if(S.sym&&W-1-h.mx!==h.mx)pts.push([W-1-h.mx,h.my]);
+  for(const[mx,my]of pts){const i=my*W+mx,prev=S.motif.idx[i];if(prev===c)continue;const key=mx+','+my;stroke.push({t:'m',key,x:mx,y:my,prev,pe:S.motifEdits.get(key),c});S.motifEdits.set(key,c);S.motif.idx[i]=c}}
+ else{const cx=S.layout==='pair'&&f.tag==='лев'?f.N-1-x:x,key=`${f.N}:${cx},${y}`;if(f.px[y*f.w+x]===c)return;stroke.push({t:'f',key,pe:S.fieldEdits.get(key),c});S.fieldEdits.set(key,c)}
+ buildFiles();
+}
+function fillAt(f,x,y,c){const h=inMotif(f,x,y);if(!h){toast('Заливка работает внутри мотива. Поле фона правьте карандашом.');return}
+ const{w:W,h:R,idx}=S.motif,from=idx[h.my*W+h.mx];if(from===c)return;const q=[[h.mx,h.my]],seen=new Uint8Array(W*R);
+ while(q.length){const[a,b]=q.pop();if(a<0||b<0||a>=W||b>=R)continue;const i=b*W+a;if(seen[i]||idx[i]!==from)continue;seen[i]=1;const key=a+','+b;stroke.push({t:'m',key,x:a,y:b,prev:from,pe:S.motifEdits.get(key),c});S.motifEdits.set(key,c);idx[i]=c;q.push([a+1,b],[a-1,b],[a,b+1],[a,b-1])}
+ buildFiles();
+}
+function revert(E){for(let i=E.length-1;i>=0;i--){const e=E[i],M=e.t==='m'?S.motifEdits:S.fieldEdits;e.pe===undefined?M.delete(e.key):M.set(e.key,e.pe);if(e.t==='m')S.motif.idx[e.y*S.motif.w+e.x]=e.prev}}
+function reapply(E){for(const e of E){(e.t==='m'?S.motifEdits:S.fieldEdits).set(e.key,e.c);if(e.t==='m')S.motif.idx[e.y*S.motif.w+e.x]=e.c}}
+function endStroke(){if(stroke&&stroke.length){S.undo.push(stroke);S.redo=[];if(S.undo.length>300)S.undo.shift()}stroke=null;buildFiles();App.onEdit()}
+function cancelStroke(){if(stroke){revert(stroke);stroke=null;buildFiles();App.onEdit()}}
+function undo(){const e=S.undo.pop();if(!e)return;revert(e);S.redo.push(e);buildFiles();App.onEdit()}
+function redo(){const e=S.redo.pop();if(!e)return;reapply(e);S.undo.push(e);buildFiles();App.onEdit()}
+const editsCount=()=>S.motifEdits.size+S.fieldEdits.size;
+
+/* ---------- BMP 8-bit (RULE-021…024, 080) ---------- */
+function makeBMP(f){
+ const pal=S.base.palette,used=[...new Set(f.px)].sort((a,b)=>a-b),re=new Map(used.map((u,i)=>[u,i])),E=used.map(u=>pal[u]);
+ if(!E.some(c=>!c[0]&&!c[1]&&!c[2]))E.push([0,0,0]);
+ const n=E.length,row=Math.ceil(f.w/4)*4,img=row*f.h+2,off=54+4*n,tot=off+img,b=new ArrayBuffer(tot),v=new DataView(b),u=new Uint8Array(b);
+ u[0]=66;u[1]=77;v.setUint32(2,tot,true);v.setUint32(10,off,true);v.setUint32(14,40,true);v.setInt32(18,f.w,true);v.setInt32(22,f.h,true);v.setUint16(26,1,true);v.setUint16(28,8,true);
+ v.setUint32(34,img,true);v.setInt32(38,5668,true);v.setInt32(42,5668,true);v.setUint32(46,n,true);
+ E.forEach((c,i)=>{u[54+i*4]=c[2];u[55+i*4]=c[1];u[56+i*4]=c[0]});
+ for(let y=0;y<f.h;y++)for(let x=0;x<f.w;x++)u[off+(f.h-1-y)*row+x]=re.get(f.px[y*f.w+x]);
+ return new Blob([b],{type:'image/bmp'});
+}
+function saveFiles(list){list.forEach((f,i)=>setTimeout(()=>{const a=document.createElement('a');a.href=URL.createObjectURL(makeBMP(f));a.download=fileName(f);document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)},i*350));
+ toast(list.length===1?`Скачан ${fileName(list[0])}`:`Скачиваем ${list.length} ${plural(list.length,'файл','файла','файлов')} BMP`)}
+function download(list){
+ const bad=list.filter(f=>f.viol.length);if(!bad.length)return saveFiles(list);
+ const rows=bad.map(f=>`<li><b>${f.N} игл${f.tag==='лев'?' (лев)':''}:</b> ${f.viol.length} ${plural(f.viol.length,'ряд','ряда','рядов')} — ${rangesText(f.viol)}</li>`).join('');
+ const total=bad[0].viol.length;
+ modal(`<h2 id="mt">${bad.length===1?`В ${total} ${plural(total,'ряду','рядах','рядах')} больше 1 + 4 цветов`:'В части рядов больше 1 + 4 цветов'}</h2>
+ <p>Машина может не провязать такие ряды. Программа сама их не перекрашивает — поправьте точки или скачайте как есть.</p><ul class="mlist">${rows}</ul>
+ <div class="mbtns"><button class="btn primary" data-m="edit">Вернуться к правке</button><button class="btn" data-m="go">Скачать всё равно</button></div>`,
+ m=>{if(m==='go')saveFiles(list);if(m==='edit'){S.edit=true;const cf=bad.find(f=>f.key===S.cur)||bad[0];S.cur=cf.key;App.render();setTimeout(()=>App.focusRow&&App.focusRow(cf.viol[0]),60)}});
+}
+function modal(html,cb){const w=document.createElement('div');w.className='mwrap';w.innerHTML=`<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt">${html}<button class="mx" data-m="close" aria-label="Закрыть">×</button></div>`;
+ $('#app').appendChild(w);const close=m=>{w.remove();cb&&cb(m)};w.addEventListener('click',e=>{const b=e.target.closest('[data-m]');if(b)close(b.dataset.m);else if(e.target===w)close('close')});
+ w.addEventListener('keydown',e=>{if(e.key==='Escape')close('close')});setTimeout(()=>{const b=w.querySelector('.btn');b&&b.focus()},10)}
+let toastT;function toast(t){let el=$('#app .toast');if(!el){el=document.createElement('div');el.className='toast';el.setAttribute('role','status');$('#app').appendChild(el)}el.textContent=t;clearTimeout(toastT);toastT=setTimeout(()=>el.remove(),3200)}
+
+/* ---------- холст: просмотр и рисование ---------- */
+function cssVar(n,d){return getComputedStyle($('#app')).getPropertyValue(n).trim()||d}
+function createView(canvas,o={}){
+ const ctx=canvas.getContext('2d'),off=document.createElement('canvas'),V={sc:4,ox:0,oy:0,last:null,need:true,focus:null};
+ const P=new Map();let mode=null,t0=0,lastCell=null,pinch=null,space=false;
+ const getF=o.file||curFile;
+ function updOff(f){off.width=f.w;off.height=f.h;const c=off.getContext('2d'),im=c.createImageData(f.w,f.h),pal=S.base.palette;
+  for(let i=0;i<f.px.length;i++){const p=pal[f.px[i]];im.data[i*4]=p[0];im.data[i*4+1]=p[1];im.data[i*4+2]=p[2];im.data[i*4+3]=255}c.putImageData(im,0,0)}
+ V.fit=()=>{const f=getF();if(!f)return;const cw=canvas.clientWidth,ch=canvas.clientHeight,top=o.labels?26:8;V.sc=Math.max(.5,Math.min((cw-28)/f.w,(ch-top-12)/f.h));V.ox=(cw-f.w*V.sc)/2;V.oy=top+(ch-top-f.h*V.sc)/2;V.render()};
+ V.zoom=(k,cx,cy)=>{const f=getF();if(!f)return;cx??=canvas.clientWidth/2;cy??=canvas.clientHeight/2;const ns=Math.max(.5,Math.min(60,V.sc*k));V.ox=cx-(cx-V.ox)*ns/V.sc;V.oy=cy-(cy-V.oy)*ns/V.sc;V.sc=ns;V.render()};
+ V.focusRow=r=>{const f=getF();if(!f)return;V.focus=r;if(V.sc<8)V.sc=Math.min(10,Math.max(8,V.sc));V.oy=canvas.clientHeight/2-(r-.5)*V.sc;V.ox=(canvas.clientWidth-f.w*V.sc)/2;if(f.w*V.sc>canvas.clientWidth)V.ox=Math.min(20,V.ox);V.render()};
+ V.render=()=>{const dpr=devicePixelRatio||1,cw=canvas.clientWidth,ch=canvas.clientHeight;if(!cw||!ch)return;
+  if(canvas.width!==Math.round(cw*dpr)||canvas.height!==Math.round(ch*dpr)){canvas.width=Math.round(cw*dpr);canvas.height=Math.round(ch*dpr)}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=cssVar('--cv-bg','#ddd');ctx.fillRect(0,0,cw,ch);const f=getF();if(!f)return;
+  if(V.last!==f){const fresh=!V.last||V.last.key!==f.key||V.last.w!==f.w||V.last.h!==f.h;V.last=f;updOff(f);if(fresh){V.fit();return}}
+  const sc=V.sc,W=f.w*sc,H=f.h*sc;ctx.imageSmoothingEnabled=false;ctx.drawImage(off,V.ox,V.oy,W,H);
+  const vio=cssVar('--cv-viol','#d22');ctx.save();
+  for(const r of f.viol){const y=V.oy+(r-1)*sc;ctx.globalAlpha=.30;ctx.fillStyle=vio;ctx.fillRect(V.ox,y,W,sc);ctx.globalAlpha=1;ctx.fillRect(V.ox-9,y,6,Math.max(sc,2));ctx.fillRect(V.ox+W+3,y,6,Math.max(sc,2))}
+  ctx.restore();
+  if(S.grid&&sc>=6){ctx.strokeStyle=cssVar('--cv-grid','rgba(0,0,0,.2)');ctx.lineWidth=1;ctx.beginPath();
+   const x0=Math.max(0,Math.floor(-V.ox/sc)),x1=Math.min(f.w,Math.ceil((cw-V.ox)/sc)),y0=Math.max(0,Math.floor(-V.oy/sc)),y1=Math.min(f.h,Math.ceil((ch-V.oy)/sc));
+   for(let x=x0;x<=x1;x++){const X=Math.round(V.ox+x*sc)+.5;ctx.moveTo(X,V.oy+y0*sc);ctx.lineTo(X,V.oy+y1*sc)}for(let y=y0;y<=y1;y++){const Y=Math.round(V.oy+y*sc)+.5;ctx.moveTo(V.ox+x0*sc,Y);ctx.lineTo(V.ox+x1*sc,Y)}ctx.stroke();
+   ctx.strokeStyle=cssVar('--cv-grid10','rgba(0,0,0,.45)');ctx.beginPath();for(let x=Math.ceil(x0/10)*10;x<=x1;x+=10){const X=Math.round(V.ox+x*sc)+.5;ctx.moveTo(X,V.oy+y0*sc);ctx.lineTo(X,V.oy+y1*sc)}for(let y=Math.ceil(y0/10)*10;y<=y1;y+=10){const Y=Math.round(V.oy+y*sc)+.5;ctx.moveTo(V.ox+x0*sc,Y);ctx.lineTo(V.ox+x1*sc,Y)}ctx.stroke()}
+  const hx=V.ox+Math.floor(f.w/2)*sc;ctx.strokeStyle=cssVar('--cv-half','#06c');ctx.lineWidth=2;ctx.setLineDash([6,5]);ctx.beginPath();ctx.moveTo(hx,V.oy-6);ctx.lineTo(hx,V.oy+H+6);ctx.stroke();ctx.setLineDash([]);
+  if(o.labels&&f.tag!=='центр'){ctx.fillStyle=cssVar('--cv-label','#333');ctx.font='14px system-ui,sans-serif';ctx.textBaseline='bottom';const L=['правая сторона носка','левая сторона носка'];
+   if(W>300){ctx.textAlign='center';ctx.fillText(L[0],V.ox+W/4,V.oy-6);ctx.fillText(L[1],V.ox+W*3/4,V.oy-6)}}
+  if(o.marks){const M=o.marks(f);if(M&&M.length){const x0=-V.ox/sc,x1=(cw-V.ox)/sc,y0=-V.oy/sc,y1=(ch-V.oy)/sc,r=Math.max(1.5,sc*.24);ctx.fillStyle=cssVar('--cv-thin','#fff');ctx.strokeStyle=cssVar('--cv-thin-ring','#1a1a1a');ctx.lineWidth=Math.max(1,sc*.08);
+   for(const i of M){const x=i%f.w,y=(i/f.w)|0;if(x<x0-1||x>x1||y<y0-1||y>y1)continue;const X=V.ox+(x+.5)*sc,Y=V.oy+(y+.5)*sc;if(sc>=4){ctx.beginPath();ctx.arc(X,Y,r,0,7);ctx.fill();ctx.stroke()}else{ctx.fillRect(X-1,Y-1,2,2)}}}}
+  if(V.focus){ctx.strokeStyle=cssVar('--cv-focus','#000');ctx.lineWidth=2;ctx.strokeRect(V.ox-1,V.oy+(V.focus-1)*sc-1,W+2,sc+2)}
+  const hv=S.hover;if(hv&&hv.f===f.key&&sc>=3){ctx.strokeStyle=cssVar('--cv-focus','#000');ctx.lineWidth=2;ctx.strokeRect(V.ox+hv.x*sc,V.oy+hv.y*sc,sc,sc)}
+ };
+ const cell=e=>{const r=canvas.getBoundingClientRect();return{x:Math.floor((e.clientX-r.left-V.ox)/V.sc),y:Math.floor((e.clientY-r.top-V.oy)/V.sc),px:e.clientX-r.left,py:e.clientY-r.top}};
+ function hover(e){const f=getF();if(!f)return;const c=cell(e);if(c.x<0||c.y<0||c.x>=f.w||c.y>=f.h){S.hover=null}else S.hover={f:f.key,x:c.x,y:c.y,row:c.y+1,needle:c.x+1,N:f.w,count:f.rowCounts[c.y]};o.onHover&&o.onHover(S.hover)}
+ function line(f,a,b){let x0=a.x,y0=a.y;const dx=Math.abs(b.x-x0),dy=-Math.abs(b.y-y0),sx=x0<b.x?1:-1,sy=y0<b.y?1:-1;let er=dx+dy;for(let n=0;n<4000;n++){paint(f,x0,y0,S.color);if(x0===b.x&&y0===b.y)break;const e2=2*er;if(e2>=dy){er+=dy;x0+=sx}if(e2<=dx){er+=dx;y0+=sy}}}
+ const editable=()=>(o.editable?o.editable():S.edit);
+ canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);P.set(e.pointerId,{x:e.clientX,y:e.clientY});const f=getF();if(!f)return;
+  if(P.size===2){if(mode==='draw'||mode==='tap'){performance.now()-t0<350?cancelStroke():endStroke()}const[a,b]=[...P.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2,sc:V.sc,ox:V.ox,oy:V.oy};mode='pinch';return}
+  if(P.size>2)return;const c=cell(e);t0=performance.now();
+  if(e.button===1||e.button===2||space||!editable()||S.tool==='hand'){mode='pan';lastCell=c;canvas.classList.add('pan');return}
+  if(S.tool==='pipette'){if(c.x>=0&&c.y>=0&&c.x<f.w&&c.y<f.h){S.color=f.px[c.y*f.w+c.x];S.tool='pencil';App.onEdit();toast(`Взят цвет ${S.color+1}${S.color===S.base.bg?' (фон)':''}`)}mode=null;return}
+  beginStroke();if(S.tool==='fill'){fillAt(f,c.x,c.y,S.color);mode='tap'}else{paint(f,c.x,c.y,S.color);mode='draw';lastCell=c}V.render();o.onPaint&&o.onPaint()});
+ canvas.addEventListener('pointermove',e=>{if(P.has(e.pointerId))P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(mode==='pinch'&&P.size>=2){const[a,b]=[...P.values()],d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2,k=d/pinch.d,ns=Math.max(.5,Math.min(60,pinch.sc*k));
+   const r=canvas.getBoundingClientRect(),cx=pinch.mx-r.left,cy=pinch.my-r.top;V.sc=ns;V.ox=cx-(cx-pinch.ox)*ns/pinch.sc+(mx-pinch.mx);V.oy=cy-(cy-pinch.oy)*ns/pinch.sc+(my-pinch.my);V.render();return}
+  const c=cell(e);
+  if(mode==='pan'){V.ox+=c.px-lastCell.px;V.oy+=c.py-lastCell.py;lastCell=c;V.render();return}
+  if(mode==='draw'){const f=getF();if(f&&(c.x!==lastCell.x||c.y!==lastCell.y)){line(f,lastCell,c);lastCell=c}}
+  hover(e);V.render();if(mode==='draw')o.onPaint&&o.onPaint()});
+ const up=e=>{P.delete(e.pointerId);canvas.classList.remove('pan');if(P.size===0){if(mode==='draw'||mode==='tap')endStroke();mode=null}else if(mode==='pinch'&&P.size<2)mode='after'};
+ canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',e=>{P.delete(e.pointerId);if(mode==='draw'||mode==='tap')cancelStroke();mode=null});
+ canvas.addEventListener('pointerleave',()=>{if(!P.size){S.hover=null;o.onHover&&o.onHover(null);V.render()}});
+ canvas.addEventListener('wheel',e=>{e.preventDefault();const r=canvas.getBoundingClientRect();V.zoom(Math.exp(-e.deltaY*(e.ctrlKey?.01:.0018)),e.clientX-r.left,e.clientY-r.top)},{passive:false});
+ canvas.addEventListener('contextmenu',e=>e.preventDefault());
+ addEventListener('keydown',e=>{if(e.code==='Space'&&!/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)){space=true}});addEventListener('keyup',e=>{if(e.code==='Space')space=false});
+ let rw=0,rh=0;new ResizeObserver(()=>{const w=canvas.clientWidth,h=canvas.clientHeight;if(Math.abs(w-rw)>40||Math.abs(h-rh)>40){rw=w;rh=h;V.fit()}else V.render()}).observe(canvas);
+ return V;
+}
+/* «Как свяжется»: каждая точка — петля-«галочка»; высота петли = ширина / K */
+function drawKnit(canvas,f,maxW,maxH){
+ const K=S.dims.useK?S.dims.K:S.dims.Kt,cw=Math.max(1,Math.min(maxW/f.w,maxH*K/f.h)),ch=cw/K,dpr=devicePixelRatio||1;
+ canvas.width=Math.round(f.w*cw*dpr);canvas.height=Math.round(f.h*ch*dpr);canvas.style.width=f.w*cw+'px';canvas.style.height=f.h*ch+'px';
+ const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);const pal=S.base.palette,sh=p=>`rgb(${p.map(v=>Math.round(v*.62)).join(',')})`;
+ c.fillStyle=sh(pal[S.base.bg]);c.fillRect(0,0,f.w*cw,f.h*ch);
+ for(let y=0;y<f.h;y++)for(let x=0;x<f.w;x++){const p=pal[f.px[y*f.w+x]],X=x*cw+cw/2,Y=y*ch+ch/2;c.fillStyle=sh(p);c.fillRect(x*cw,y*ch,cw+.5,ch+.5);c.fillStyle=`rgb(${p})`;
+  c.beginPath();c.ellipse(X-cw*.22,Y,cw*.26,ch*.62,-.5,0,7);c.ellipse(X+cw*.22,Y,cw*.26,ch*.62,.5,0,7);c.fill()}
+}
+function drawThumb(canvas,f,maxW,maxH){const s=Math.max(1,Math.floor(Math.min(maxW/f.w,maxH/f.h)))||1,dpr=devicePixelRatio||1;canvas.width=f.w*s*dpr;canvas.height=f.h*s*dpr;canvas.style.width=f.w*s+'px';canvas.style.height=f.h*s+'px';
+ const c=canvas.getContext('2d'),im=c.createImageData(f.w,f.h),pal=S.base.palette;for(let i=0;i<f.px.length;i++){const p=pal[f.px[i]];im.data.set([p[0],p[1],p[2],255],i*4)}
+ const o=document.createElement('canvas');o.width=f.w;o.height=f.h;o.getContext('2d').putImageData(im,0,0);c.imageSmoothingEnabled=false;c.drawImage(o,0,0,canvas.width,canvas.height);
+ const vio=cssVar('--cv-viol','#d22');c.fillStyle=vio;c.globalAlpha=.9;for(const r of f.viol)c.fillRect(0,(r-1)*s*dpr,3*dpr,s*dpr)}
+
+/* ---------- значки ---------- */
+const I=p=>`<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const ICON={pencil:I('<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>'),fill:I('<path d="M5 11l7-7 7 7-7 7z"/><path d="M20 15c0 2-1 3-1.5 3S17 17 17 15l1.5-2.5z"/>'),pipette:I('<path d="M14 4l6 6-2 2-6-6z"/><path d="M13 9l-8 8v3h3l8-8"/>'),
+ hand:I('<path d="M8 12V5a1.5 1.5 0 013 0v6M11 11V4a1.5 1.5 0 013 0v7M14 11V6a1.5 1.5 0 013 0v8c0 4-2.5 6-6 6-2.5 0-4-1-5.5-3L3 13a1.5 1.5 0 012.3-1.8L8 14"/>'),
+ undo:I('<path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 010 12"/>'.replace('a6 6 0 010 12','a5 5 0 010 10h-3')),redo:I('<path d="M15 7l5 5-5 5"/><path d="M20 12H10a5 5 0 000 10h3"/>'),
+ zin:I('<circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/>'),zout:I('<circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/>'),fit:I('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
+ grid:I('<path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"/>'),sym:I('<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 12l5 5zM15 7l5 5-5 5z"/>'),
+ down:I('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),up:I('<path d="M12 20V9M7 13l5-5 5 5M5 4h14"/>'),warn:I('<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/>'),ok:I('<path d="M5 12l5 5 9-10"/>'),
+ x:I('<path d="M6 6l12 12M18 6L6 18"/>'),back:I('<path d="M15 5l-7 7 7 7"/>'),gear:I('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>'),list:I('<path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/>'),
+ drop:I('<path d="M12 3c-4 5-6 8-6 11a6 6 0 0012 0c0-3-2-6-6-11z"/>'),file:I('<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/>')};
+
+/* ---------- общие блоки настроек ---------- */
+const err=k=>S.errs[k]?`<p class="ferr" role="alert">${esc(S.errs[k])}</p>`:'';
+const B={
+ machines:()=>`<div class="opts">${MACHINES.map(m=>`<label class="opt"><input type="checkbox" data-f="machine" value="${m.id}" ${S.machines.has(m.id)?'checked':''}><span><b>${m.name}</b><small>${m.note}</small></span></label>`).join('')}</div><p class="hint">Можно отметить несколько — один макет на каждое число игл.</p>`,
+ needles:()=>{if(!S.machines.size)return`<p class="hint warnline">Сначала выберите машину</p>`;const av=[...available()].sort((a,b)=>a-b),sel=selected();
+  return`<div class="chips">${av.map(n=>`<label class="chip"><input type="checkbox" data-f="needle" value="${n}" ${S.needles.has(n)?'checked':''}><span>${n}</span></label>`).join('')}</div>
+  ${S.machines.has('other')?`<label class="fld"><span>Своё число игл</span><span class="row"><input type="text" inputmode="numeric" data-f="customN" placeholder="96–200" aria-describedby="cn-h"><small id="cn-h">целое от 96 до 200</small></span></label>${err('customN')}`:''}
+  ${S.notice?`<p class="hint">${esc(S.notice)}</p>`:''}${sel.length?'':`<p class="hint warnline">Выберите хотя бы одно число игл</p>`}`},
+ weave:()=>{const D=S.dims,sel=selected(),diff=sel.filter(n=>kFor(n,S.weave)!==D.Kt);
+  return`<div class="opts two"><label class="opt"><input type="radio" name="weave" data-f="weave" value="glad" ${S.weave==='glad'?'checked':''}><span><b>Гладь</b><small>обычный носок</small></span></label><label class="opt"><input type="radio" name="weave" data-f="weave" value="sport" ${S.weave==='sport'?'checked':''}><span><b>Спорт-резинка</b><small>плотная, тянется</small></span></label></div>
+  ${D&&D.pix?`<p class="hint">Рисунок уже точечный — коэффициент высоты не применяется.</p><label class="opt line"><input type="checkbox" data-f="applyK" ${S.applyK?'checked':''}><span>Применить коэффициент ${fmtK(D.Kt)}</span></label>`:''}
+  ${D&&D.useK?`<label class="fld"><span>Коэффициент высоты</span><span class="row"><input type="text" inputmode="decimal" data-f="k" value="${fmtK(D.K)}"><small>${S.kManual!=null?`<button class="link" data-act="resetK">вернуть ${fmtK(D.Kt)}</button>`:`по таблице для ${minNeedle()||156} игл`}</small></span></label>${err('k')}
+  ${diff.length?`<p class="hint">Коэффициент взят для ${sel[0]} игл; ${diff.map(n=>`для ${n} игл по таблице ${fmtK(kFor(n,S.weave))}`).join(', ')}.</p>`:''}`:''}`},
+ height:()=>`<div class="opts two"><label class="opt"><input type="radio" name="hm" data-f="height" value="motif" ${S.heightMode==='motif'?'checked':''}><span><b>По мотиву</b><small>только мотив + ряд фона сверху и снизу</small></span></label><label class="opt"><input type="radio" name="hm" data-f="height" value="sock" ${S.heightMode==='sock'?'checked':''}><span><b>Полотно по размеру носка</b><small>мотив на своём месте по высоте</small></span></label></div>
+  ${S.heightMode==='sock'?selected().map(n=>`<label class="fld"><span>${n} игл — размер</span><select data-f="sock" data-n="${n}">${(SOCK[n]||[]).map(([t,r])=>`<option value="${r}" ${(S.sockRows[n]??SOCK[n][SOCK[n].length-1][1])===r?'selected':''}>${t} — ${r} рядов</option>`).join('')}<option value="own" ${SOCK[n]&&!SOCK[n].some(s=>s[1]===S.sockRows[n])&&S.sockRows[n]?'selected':''} ${!SOCK[n]?'selected':''}>своё число рядов…</option></select></label>
+  ${(!SOCK[n]||(S.sockRows[n]&&!SOCK[n].some(s=>s[1]===S.sockRows[n])))?`<label class="fld"><span>Рядов полотна для ${n}</span><input type="text" inputmode="numeric" data-f="sockOwn" data-n="${n}" value="${S.sockRows[n]??''}" placeholder="1–1000"></label>`:''}`).join('')+
+  `<label class="fld"><span>Отступ мотива сверху, рядов</span><input type="text" inputmode="numeric" data-f="top" value="${S.topOffset}"></label>${err('sock')}${err('top')}`:''}`,
+ layout:()=>`<div class="opts"><label class="opt"><input type="radio" name="lay" data-f="layout" value="mirror" ${S.layout==='mirror'?'checked':''}><span><b>Обе стороны зеркально</b><small>мотив снаружи и изнутри стопы, один файл</small></span></label>
+  <label class="opt"><input type="radio" name="lay" data-f="layout" value="one" ${S.layout==='one'?'checked':''}><span><b>Одна сторона</b><small>мотив как нарисован, вторая сторона — фон</small></span></label>
+  <label class="opt"><input type="radio" name="lay" data-f="layout" value="pair" ${S.layout==='pair'?'checked':''}><span><b>Пара: правый и левый носок</b><small>два файла, левый — зеркально</small></span></label></div>
+  ${S.layout==='one'?`<div class="opts two"><label class="opt line"><input type="radio" name="side" data-f="side" value="right" ${S.side==='right'?'checked':''}><span>Правая сторона</span></label><label class="opt line"><input type="radio" name="side" data-f="side" value="left" ${S.side==='left'?'checked':''}><span>Левая сторона</span></label></div>`:''}`,
+ size:()=>{const D=S.dims;if(!D)return'';const st=S.rManual?Math.round((D.R/D.Rs-1)*100):0;
+  return`<div class="pair"><label class="fld"><span>Ширина мотива, точек</span><input type="text" inputmode="numeric" data-f="w" value="${D.W}"></label><label class="fld"><span>Рядов мотива</span><input type="text" inputmode="numeric" data-f="r" value="${D.R}"></label></div>${err('w')}${err('r')}
+  <p class="hint">${D.pix?'Рисунок уже точечный — размер 1 : 1.':`Предложено ${D.suggested} точек: половина ${minNeedle()||156} игл минус 6 на поля.`} ${S.wManual!=null?`<button class="link" data-act="resetW">вернуть ${D.suggested}</button>`:''}</p>
+  ${st?`<p class="hint warnline">Пропорция изменена: мотив ${st>0?'вытянут':'сжат'} по высоте на ${Math.abs(st)} % <button class="link" data-act="resetR">вернуть ${D.Rs}</button></p>`:''}
+  ${D.pix?'':`<label class="fld"><span>Цветов в макете (с фоном)</span><select data-f="colors">${[2,3,4,5,6,7,8].map(n=>`<option ${S.colors===n?'selected':''}>${n}</option>`).join('')}</select></label><p class="hint">Оттенков в исходнике: ${num(S.src.shades)} → стало ${S.base.palette.length}.</p>`}`},
+ palette:(withBg=true)=>{const b=S.base;if(!b)return'';return`<div class="pal" role="group" aria-label="Цвета макета">${b.palette.map((c,i)=>`<button type="button" class="sw ${S.color===i?'on':''}" data-act="color" data-v="${i}" style="--c:rgb(${c})" aria-pressed="${S.color===i}" title="Цвет ${i+1}: rgb(${c})${i===b.bg?', фон':''}"><i></i><span>${i+1}${i===b.bg?' · фон':''}</span></button>`).join('')}</div>
+  ${withBg&&S.color!==b.bg?`<button class="link" data-act="bg">Сделать цвет ${S.color+1} фоном</button>`:''}`},
+ tools:()=>[['pencil','Карандаш','B'],['fill','Заливка','G'],['pipette','Пипетка','I'],['hand','Рука','H']].map(([t,n,k])=>`<button type="button" class="tool ${S.tool===t?'on':''}" data-act="tool" data-v="${t}" aria-pressed="${S.tool===t}" title="${n} (${k})">${ICON[t]}<span>${n}</span></button>`).join(''),
+ history:()=>`<button type="button" class="tool" data-act="undo" ${S.undo.length?'':'disabled'} title="Отменить (Ctrl+Z)">${ICON.undo}<span>Отменить</span></button><button type="button" class="tool" data-act="redo" ${S.redo.length?'':'disabled'} title="Повторить (Ctrl+Shift+Z)">${ICON.redo}<span>Повторить</span></button>`,
+ view:()=>`<button type="button" class="tool" data-act="zout" title="Мельче (−)">${ICON.zout}<span>Мельче</span></button><button type="button" class="tool" data-act="zin" title="Крупнее (+)">${ICON.zin}<span>Крупнее</span></button><button type="button" class="tool" data-act="fit" title="Весь макет (0)">${ICON.fit}<span>Весь</span></button>
+  <button type="button" class="tool ${S.grid?'on':''}" data-act="grid" aria-pressed="${S.grid}" title="Сетка">${ICON.grid}<span>Сетка</span></button><button type="button" class="tool ${S.sym?'on':''}" data-act="sym" aria-pressed="${S.sym}" title="Симметрично: правка отражается по оси мотива">${ICON.sym}<span>Симметр.</span></button>`,
+ status:(h)=>{const f=curFile();if(!f)return'';if(!h||h.f!==f.key)return`<span>Наведите или коснитесь точки — покажу ряд, иглу и цвета в ряду</span>`;const bad=h.count>4;
+  return`<span>Ряд <b>${h.row}</b> из ${f.h}</span><span>Игла <b>${h.needle}</b> из ${h.N}</span><span class="${bad?'bad':'good'}">Цветов рисунка в ряду: <b>${h.count} из 4</b>${bad?' — лишний цвет':''}</span>`},
+ viol:(f)=>{if(!f)return'';if(!f.viol.length)return`<p class="okline">${ICON.ok} Нарушений нет: в каждом ряду не больше 1 + 4 цветов</p>`;
+  return`<p class="badline">${ICON.warn} ${f.viol.length} ${plural(f.viol.length,'ряд','ряда','рядов')} с лишним цветом (больше 1 + 4)</p><div class="vrows">${ranges(f.viol).map(r=>`<button type="button" class="vr" data-act="row" data-v="${r.a}">${r.b?'ряды':'ряд'} ${r.t}</button>`).join('')}</div>`},
+ machinesLine:f=>`${f.N} игл — ${machinesFor(f.N).join(', ')||'—'}`,
+};
+
+/* ---------- события ---------- */
+function setErr(k,m){if(m)S.errs[k]=m;else delete S.errs[k]}
+function field(el){const f=el.dataset.f,v=el.value.trim();
+ switch(f){
+ case'machine':setMachine(v,el.checked);break;
+ case'needle':el.checked?S.needles.add(+v):S.needles.delete(+v);S.notice='';break;
+ case'customN':{const n=Number(v);if(!/^\d+$/.test(v)||n<96||n>200){setErr('customN','Число игл — целое от 96 до 200');break}setErr('customN');if(!S.custom.includes(n))S.custom.push(n);S.needles.add(n);break}
+ case'weave':S.weave=v;S.kManual=null;setErr('k');break;
+ case'applyK':S.applyK=el.checked;break;
+ case'k':{const n=Number(v.replace(',','.'));if(!/^\d+([.,]\d+)?$/.test(v)||n<.5||n>2){setErr('k','Коэффициент высоты — число от 0,50 до 2,00');break}setErr('k');S.kManual=n;break}
+ case'height':S.heightMode=v;break;
+ case'sock':if(v!=='own')S.sockRows[el.dataset.n]=+v;else S.sockRows[el.dataset.n]=0;break;
+ case'sockOwn':{const n=Number(v);if(!/^\d+$/.test(v)||n<1||n>1000){setErr('sock','Высота полотна — целое от 1 до 1000 рядов');break}setErr('sock');S.sockRows[el.dataset.n]=n;break}
+ case'top':{const n=Number(v);if(!/^\d+$/.test(v)){setErr('top','Отступ — целое число рядов от 0');break}setErr('top');S.topOffset=n;break}
+ case'layout':S.layout=v;break;
+ case'side':S.side=v;break;
+ case'w':{const n=Number(v);if(!/^\d+$/.test(v)||n<1||n>200){setErr('w','Ширина мотива — целое от 1 до 200');break}setErr('w');S.wManual=n;break}
+ case'r':{const n=Number(v);if(!/^\d+$/.test(v)||n<1||n>1000){setErr('r','Рядов мотива — целое от 1 до 1000');break}setErr('r');S.rManual=n;break}
+ case'colors':S.colors=+v;S.baseDirty=true;S.motifEdits.clear();S.fieldEdits.clear();S.undo=[];S.redo=[];break;
+ case'file':if(el.files[0])openFile(el.files[0]);el.value='';return;
+ default:return false}
+ try{rebuild()}catch(e){S.error=e.ui||ERRORS[0]}App.render();return true;
+}
+async function openFile(file){S.error=null;S.loading=true;App.render();await new Promise(r=>setTimeout(r,450));
+ try{const src=await readFile(file);startWith(src)}catch(e){S.loading=false;S.src=null;S.error=e.ui||ERRORS[0];App.render()}}
+function startWith(src){S.src=src;S.baseDirty=true;S.bgOverride=null;S.wManual=S.rManual=S.kManual=null;S.motifEdits.clear();S.fieldEdits.clear();S.undo=[];S.redo=[];S.loading=false;S.error=null;
+ try{rebuild()}catch(e){S.src=null;S.error=e.ui||ERRORS[0]}App.render()}
+let CORGI=null;
+async function example(){if(!CORGI){const im=await loadImg('data:image/bmp;base64,'+CORGI_B64);CORGI=fromImage(im,'корги в очках')}return CORGI}
+function act(a,v,el){
+ if(App.act(a,v,el))return;
+ switch(a){
+ case'example':S.loading=true;App.render();setTimeout(async()=>startWith(await example()),450);return;
+ case'pick':($('#app input[type=file]')||{}).click&&$('#app input[type=file]').click();return;
+ case'tool':S.tool=v;break;case'color':S.color=+v;break;
+ case'undo':undo();break;case'redo':redo();break;
+ case'zin':App.view&&App.view.zoom(1.4);return;case'zout':App.view&&App.view.zoom(1/1.4);return;case'fit':App.view&&App.view.fit();return;
+ case'grid':S.grid=!S.grid;break;case'sym':S.sym=!S.sym;toast(S.sym?'Симметрично: точка ставится и в отражение по оси мотива':'Симметрия выключена');break;
+ case'edit':S.edit=!S.edit;if(S.edit)toast(matchMedia('(pointer:coarse)').matches||$('.stage.phone')?'Правка включена: один палец рисует, два — двигают и масштабируют':'Правка включена: рисуйте мышью, колесо — масштаб, пробел + мышь — сдвиг');break;
+ case'fmt':S.cur=v;S.hover=null;break;
+ case'row':App.focusRow&&App.focusRow(+v);return;
+ case'bg':S.bgOverride=S.color;S.baseDirty=true;S.motifEdits.clear();S.fieldEdits.clear();S.undo=[];S.redo=[];rebuild();toast('Фон изменён — нарушители пересчитаны, ручные правки сброшены');break;
+ case'resetW':S.wManual=null;rebuild();break;case'resetR':S.rManual=null;rebuild();break;case'resetK':S.kManual=null;rebuild();break;
+ case'dl':download(okFiles().filter(f=>f.key===v));return;case'dlall':download(okFiles());return;
+ case'retry':S.error=null;S.loading=true;App.render();setTimeout(async()=>startWith(await example()),700);return;
+ case'reset':S.error=null;break;
+ default:return}
+ App.render();
+}
+document.addEventListener('change',e=>{if(e.target.closest('#app')&&e.target.dataset.f)field(e.target)});
+document.addEventListener('keydown',e=>{if(e.target.dataset&&e.target.dataset.f&&e.key==='Enter'&&e.target.tagName==='INPUT')field(e.target)});
+document.addEventListener('click',e=>{const b=e.target.closest('#app [data-act]');if(b&&!b.disabled){e.preventDefault();act(b.dataset.act,b.dataset.v,b)}});
+document.addEventListener('keydown',e=>{if(!S.edit||/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName))return;const k=e.key.toLowerCase(),m=e.ctrlKey||e.metaKey;
+ if(m&&k==='z'){e.preventDefault();e.shiftKey?redo():undo();App.render();return}if(m&&k==='y'){e.preventDefault();redo();App.render();return}if(m)return;
+ const map={b:'pencil','и':'pencil',g:'fill','п':'fill',i:'pipette','ш':'pipette',h:'hand','р':'hand'};if(map[k]){S.tool=map[k];App.render();return}
+ if(k==='+'||k==='=')act('zin');else if(k==='-')act('zout');else if(k==='0')act('fit')});
+['dragover','drop'].forEach(t=>document.addEventListener(t,e=>{if(!e.target.closest('#app'))return;e.preventDefault();if(t==='drop'&&e.dataTransfer.files[0])openFile(e.dataTransfer.files[0])}));
+
+/* ---------- служебная панель прототипа ---------- */
+async function setProtoState(st){
+ const keep=App.keep?App.keep():{};S=freshState();Object.assign(S,keep);App.preset&&App.preset(st);
+ if(st==='empty'){App.render();return}
+ if(st==='loading'){S.loading=true;App.render();return}
+ if(st==='error'){S.error=ERRORS[(setProtoState.e=(setProtoState.e??-1)+1)%ERRORS.length];App.render();return}
+ const src=await example();
+ if(st==='normal'){S.machines=new Set(['lanati','rainbowe']);S.needles=new Set([144,156,168]);S.cur='156-зерк'}
+ if(st==='many'){S.machines=new Set(['lanati','rainbowe','other']);S.custom=[186];S.needles=new Set([96,108,120,132,144,156,168,176,186,200]);S.layout='pair';S.cur='156-прав'}
+ S.src=src;S.baseDirty=true;rebuild();App.render();
+}
+function initProto(title){
+ const bar=document.createElement('div');bar.className='proto';bar.innerHTML=`<b>${title}</b>
+ <span class="seg" role="group" aria-label="Состояние экрана">${[['normal','Норма'],['empty','Пусто'],['loading','Загрузка'],['error','Ошибка'],['many','Много данных']].map(([k,t])=>`<button type="button" data-st="${k}" aria-pressed="${k==='normal'}">${t}</button>`).join('')}</span>
+ <span class="seg" role="group" aria-label="Устройство"><button type="button" data-dev="pc" aria-pressed="true">Компьютер</button><button type="button" data-dev="phone" aria-pressed="false">Телефон 360×780</button></span><small>Ошибка — нажмите ещё раз, покажу другую</small>`;
+ document.body.prepend(bar);document.documentElement.style.setProperty('--protoH',bar.offsetHeight+'px');
+ bar.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.st){$$('[data-st]',bar).forEach(x=>x.setAttribute('aria-pressed',x===b));setProtoState(b.dataset.st)}
+  if(b.dataset.dev){$$('[data-dev]',bar).forEach(x=>x.setAttribute('aria-pressed',x===b));$('.stage').classList.toggle('phone',b.dataset.dev==='phone');setTimeout(()=>{App.view&&App.view.fit();App.render()},30)}});
+ addEventListener('resize',()=>document.documentElement.style.setProperty('--protoH',bar.offsetHeight+'px'));
+ setProtoState('normal');
+}
+
+/* перерисовка без потери фокуса и прокрутки */
+function rerender(root,html){const a=document.activeElement;let sel=null;
+ if(a&&root.contains(a)){if(a.dataset.f)sel=`[data-f="${a.dataset.f}"]`+(a.type==='checkbox'||a.type==='radio'?`[value="${a.value}"]`:'')+(a.dataset.n?`[data-n="${a.dataset.n}"]`:'');else if(a.dataset.act)sel=`[data-act="${a.dataset.act}"]`+(a.dataset.v!=null?`[data-v="${a.dataset.v}"]`:'')}
+ const sc={};$$('[data-keep]',root).forEach(e=>sc[e.dataset.keep]=e.scrollTop);
+ root.innerHTML=html;$$('[data-keep]',root).forEach(e=>{if(sc[e.dataset.keep])e.scrollTop=sc[e.dataset.keep]});
+ if(sel){const n=root.querySelector(sel);n&&n.focus({preventScroll:true})}}
+
+/* ===== Макет П-48 (вариант В) ===== */
+ERRORS.push({t:'Сервер не ответил',d:'Связь с сервером прервалась во время перевода. Выбранные машины и параметры сохранены, уже собранные макеты на месте.',retry:true});
+const cv=document.createElement('canvas');cv.className='cv';
+let view=null,ready=false,vmode='knit',drawer=null,pop=null,showThin=false,opener=null,slowT=null;
+App.keep=()=>({});
+App.preset=st=>{ready=st==='normal'||st==='many';drawer=null;pop=null;vmode='knit';showThin=false};
+App.focusRow=r=>{S.focusRow=r;vmode='dots';if(drawer==='check')drawer=null;App.render();requestAnimationFrame(()=>view&&view.focusRow(r))};
+App.onEdit=()=>{paintAside();paintPill();const rc=$('#rowchip');if(rc)rc.innerHTML=B.status(S.hover)};
+/* тонкая точка (требования, раздел 5, «Тонкая точка»): не фон; оба соседа по ряду другого цвета (ряд замкнут по кругу)
+   или оба соседа по столбцу другого цвета (за краем файла — «другой цвет») */
+function thin(f){if(f._thin)return f._thin;const{w,h,px}=f,bg=S.base.bg,o=[];
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x,v=px[i];if(v===bg)continue;
+  const l=px[y*w+(x-1+w)%w],r=px[y*w+(x+1)%w],u=y>0?px[i-w]:-1,d=y<h-1?px[i+w]:-1;
+  if((l!==v&&r!==v)||(u!==v&&d!==v))o.push(i)}
+ return f._thin=o}
+function setDrawer(v){if(v&&!drawer){const a=document.activeElement;opener=a&&a.dataset&&a.dataset.act?{act:a.dataset.act,v:a.dataset.v,cls:a.className.split(' ')[0]}:null}drawer=v||null;pop=null;App.render();
+ if(drawer){const el=$('#sec-'+drawer);if(el){el.scrollIntoView({block:'start'});el.classList.add('hl');const inp=el.querySelector('input,select,button');inp&&inp.focus({preventScroll:true})}else{const b=$('.drawer .iconbtn');b&&b.focus()}}
+ else if(opener){const b=$$(`#app [data-act="${opener.act}"]`).find(x=>x.dataset.v===opener.v&&x.classList.contains(opener.cls)&&x.offsetParent);b&&b.focus()}}
+App.act=(a,v)=>{
+ if(a==='show'){if(!S.machines.size){S.errs.ask='Отметьте машину, на которой будете вязать';App.render();return true}if(!selected().length){S.errs.ask='Выберите хотя бы одно число игл';App.render();return true}delete S.errs.ask;ready=true;App.render();return true}
+ if(a==='drawer'){setDrawer(v);return true}
+ if(a==='vmode'){vmode=v;if(v==='knit'){S.edit=false;showThin=false}App.render();return true}
+ if(a==='edit'){S.edit=!S.edit;if(S.edit){vmode='dots';toast($('.stage.phone')||matchMedia('(pointer:coarse)').matches?'Режим мастера: один палец рисует, два — двигают и масштабируют':'Режим мастера: рисуйте мышью, колесо — масштаб, пробел + мышь — сдвиг')}pop=null;App.render();return true}
+ if(a==='thin'){showThin=!showThin;if(showThin)vmode='dots';if(drawer==='check')drawer=null;App.render();return true}
+ if(a==='pop'){pop=pop===v?null:v;paintPill();return true}
+ if(a==='color'){S.color=+v;pop=null;paintPill();return true}
+ if(a==='new'){S=freshState();ready=false;drawer=null;App.render();return true}
+ return false};
+document.addEventListener('keydown',e=>{if(e.key!=='Escape'||$('.mwrap'))return;if(pop){pop=null;paintPill()}else if(drawer)setDrawer(null)});
+function srcThumb(c){const s=S.src,k=Math.min(300/s.w,300/s.h,s.pixel?4:1),im=new ImageData(new Uint8ClampedArray(s.data),s.w,s.h),o=document.createElement('canvas');o.width=s.w;o.height=s.h;o.getContext('2d').putImageData(im,0,0);c.width=Math.round(s.w*k);c.height=Math.round(s.h*k);const x=c.getContext('2d');x.imageSmoothingEnabled=!s.pixel;x.drawImage(o,0,0,c.width,c.height)}
+function deco(c){const H=['..........................','....XXX......XXX.........','...XXXXX....XXXXX........','..XXXXXXX..XXXXXXX.......','..XXXXXXXXXXXXXXXX.......','..XXXXXXXXXXXXXXXX.......','...XXXXXXXXXXXXXX........','....XXXXXXXXXXXX.........','.....XXXXXXXXXX..........','......XXXXXXXX...........','.......XXXXXX............','........XXXX.............','.........XX..............','..........................'];
+ const cs=getComputedStyle($('#app')),a=cs.getPropertyValue('--action').trim(),b=cs.getPropertyValue('--surf').trim(),cw=22,ch=17,dpr=devicePixelRatio||1;c.width=26*cw*dpr;c.height=H.length*ch*dpr;c.style.width='92%';const x=c.getContext('2d');x.scale(dpr,dpr);x.fillStyle=cs.getPropertyValue('--sunk').trim();x.fillRect(0,0,26*cw,H.length*ch);
+ H.forEach((r,j)=>[...r].forEach((v,i)=>{const X=i*cw+cw/2+3,Y=j*ch+ch/2;x.fillStyle=v==='X'?a:b;x.beginPath();x.ellipse(X-cw*.22,Y,cw*.26,ch*.62,-.5,0,7);x.ellipse(X+cw*.22,Y,cw*.26,ch*.62,.5,0,7);x.fill()}))}
+const errActs=e=>e.retry?'<button class="btn primary" data-act="retry">Повторить</button><button class="btn" data-act="pick">Выбрать другой файл</button>':'<button class="btn primary" data-act="pick">Выбрать другой файл</button><button class="btn" data-act="example">Взять пример</button>';
+function start(){
+ if(S.loading)return`<div class="hero" aria-busy="true"><div><h1>Смотрим, как ляжет <em>на носок</em>…</h1><p class="lead">Переводим рисунок в точки и сводим цвета.</p><div class="card"><div class="skel"></div><div class="skel" style="width:70%"></div><div class="skel" style="width:50%"></div><p class="slow" id="slow" role="status"></p></div></div><div class="knitdeco"><div class="skel" style="width:60%;height:60%;border-radius:16px"></div></div></div>`;
+ const e=S.error;
+ return`<div class="hero"><div><h1>Рисунок — и сразу видно, <em>как он свяжется</em></h1><p class="lead">Загрузите мотив. Покажем носок в петлях, отметим ряды с лишним цветом и отдадим BMP под ваши машины.</p>
+ ${e?`<div class="card err" role="alert"><h2>${esc(e.t)}</h2><p style="margin:0">${esc(e.d)}</p><div class="acts">${errActs(e)}</div></div>`:
+ `<div class="drop" id="drop"><b style="font-size:19px">Перетащите рисунок сюда</b><button class="btn primary big" data-act="pick">${ICON.up} Выбрать рисунок</button><p>PNG, JPG, BMP или WebP, до 50 МБ</p></div><p class="hint">Попробовать без файла: <button class="link" data-act="example">пример «корги в очках»</button></p>`}</div>
+ <div class="knitdeco" aria-hidden="true"><canvas id="deco"></canvas></div></div>`}
+function ask(){return`<div class="ask"><div><div class="srcbox"><canvas id="srcc" role="img" aria-label="Загруженный рисунок"></canvas></div><p class="srcmeta">${esc(S.src.name.replace(/_/g,' '))} · ${S.src.ow} × ${S.src.oh} px · <button class="link" data-act="new">другой файл</button></p></div>
+ <div><h1>Рисунок открыт. Остался один вопрос</h1><p class="hint" style="margin:0 0 var(--s4)">На какой машине будете вязать? Остальное поставим как обычно, поменять можно потом в настройках.</p>
+ <fieldset style="border:0;padding:0;margin:0"><legend class="sr">Машина</legend>${B.machines()}</fieldset>
+ ${S.machines.size?`<p class="qh" id="nq">Числа игл</p><div role="group" aria-labelledby="nq">${B.needles()}</div>`:''}${S.errs.ask?`<p class="ferr" role="alert">${S.errs.ask}</p>`:''}
+ <div class="acts"><button class="btn primary big" data-act="show">Показать макет</button></div></div></div>`}
+const layText=()=>({mirror:'на обе стороны зеркально',one:S.side==='right'?'на правую сторону':'на левую сторону',pair:'парой: правый и левый'})[S.layout];
+const PEN=I('<path d="M4 20l4-1 11-11-3-3L5 16z"/>');
+function sayHTML(){const D=S.dims;const n=selected();
+ return`<p class="say">Макет на <button class="pill" data-act="drawer" data-v="needles">${n.join(', ')} игл ${PEN}</button> · <button class="pill" data-act="drawer" data-v="weave">${S.weave==='glad'?'гладь':'спорт-резинка'}${D.useK?', '+fmtK(D.K):''} ${PEN}</button> · мотив <button class="pill" data-act="drawer" data-v="size">${D.W} × ${D.R} ${PEN}</button> <button class="pill" data-act="drawer" data-v="layout">${layText()} ${PEN}</button> · <button class="pill" data-act="drawer" data-v="height">${S.heightMode==='motif'?'по мотиву':'полотно носка'} ${PEN}</button></p>
+ <button class="saym" data-act="drawer" data-v="machines"><span>${n.length} ${plural(n.length,'формат','формата','форматов')} · ${S.weave==='glad'?'гладь':'спорт'}${D.useK?' '+fmtK(D.K):''} · ${({mirror:'зеркально',one:'одна сторона',pair:'пара'})[S.layout]} · мотив ${D.W} × ${D.R}</span><b>Изменить</b></button>`}
+function rowColors(f,r){const s=new Set(),bg=S.base.bg;for(let x=0;x<f.w;x++){const v=f.px[(r-1)*f.w+x];if(v!==bg)s.add(v)}return[...s].sort((a,b)=>a-b)}
+function violTable(f){if(!f.viol.length)return B.viol(f);const pal=S.base.palette;
+ return`<p class="badline">${ICON.warn} ${f.viol.length} ${plural(f.viol.length,'ряд','ряда','рядов')} с лишним цветом (больше 1 + 4)</p><p class="hint" style="margin:0 0 var(--s2)">${f.viol.length>1?'Ряды':'Ряд'} ${rangesText(f.viol)}. Нажмите на строку — покажу ряд по точкам.</p>
+ <div class="vtw" data-keep="vt" tabindex="-1"><table class="vt"><caption class="sr">Ряды-нарушители: номер, число цветов рисунка и сами цвета</caption><thead><tr><th scope="col">Ряд</th><th scope="col">Цветов рисунка</th><th scope="col">Какие</th></tr></thead><tbody>${f.viol.map(r=>{const c=rowColors(f,r);return`<tr data-act="row" data-v="${r}" class="${S.focusRow===r?'cur':''}"><td><button type="button" data-act="row" data-v="${r}" aria-label="Показать ряд ${r}">${r}</button></td><td class="n">${c.length} из 4</td><td><span class="sws">${c.map(i=>`<i style="--c:rgb(${pal[i]})" title="цвет ${i+1}"></i>`).join('')}</span><span class="sr">цвета ${c.map(i=>i+1).join(', ')}</span></td></tr>`}).join('')}</tbody></table></div>`}
+function checkHTML(f){if(!f)return'';const t=thin(f);
+ return`<div class="note ${f.viol.length?'bad':''}">${violTable(f)}${f.viol.length?'<p class="hint" style="margin-top:var(--s2)">Программа сама ряды не перекрашивает.</p>':''}${f.warns.map(w=>`<p class="warn">${esc(w)}</p>`).join('')}</div>
+ <div class="note"><h2>Справочно: линии в 1 точку</h2><div class="thin"><span>${num(t.length)} ${plural(t.length,'точка','точки','точек')}</span>${t.length?`<button class="tbtn" data-act="thin" aria-pressed="${showThin}">${showThin?'Скрыть':'Показать тонкие места'}</button>`:''}</div>
+ <p class="hint">На наших машинах такие линии провязываются. ${showThin?'<span class="legend" aria-hidden="true"></span>— тонкая точка.':''}</p></div>
+ <div class="note"><h2>Подходит для машин</h2><p style="margin:0">${B.machinesLine(f)}</p><p class="hint">${f.w} × ${f.h} точек · ${tagLabel(f)}${S.edit||editsCount()?` · изменено точек: ${editsCount()}`:''}</p></div>`}
+function aside(){const f=curFile(),ok=okFiles();
+ return`<div class="notes" data-keep="notes">${checkHTML(f)}
+ ${S.files.filter(x=>x.err).map(x=>`<div class="note bad"><b style="color:var(--error)">${esc(x.err)}</b><p class="hint">${esc(x.hint)}</p><button class="link" data-act="drawer" data-v="size">Изменить размер мотива</button></div>`).join('')}</div>
+ ${ok.length?`<div class="dlbox"><button class="btn primary big" data-act="dlall">${ICON.down} Скачать ${ok.length===1?'BMP':ok.length+' '+plural(ok.length,'файл','файла','файлов')+' BMP'}</button>${ok.length>1&&f?`<button class="btn" data-act="dl" data-v="${f.key}">Только ${f.N}${S.layout==='pair'?' '+f.tag:''}</button>`:''}<small class="fname">${esc(ok.length===1?fileName(ok[0]):fileName(ok[0])+' и ещё '+(ok.length-1))}</small></div>`:''}`}
+function paintAside(){const a=$('#aside');if(a)rerender(a,aside());const d=$('#checkc');if(d)rerender(d,checkHTML(curFile()))}
+function pillHTML(){const pal=S.base.palette;return`${B.tools()}<span class="sep"></span><button class="cur-sw" data-act="pop" data-v="pal" style="--c:rgb(${pal[S.color]})" aria-label="Цвет ${S.color+1}, выбрать другой" aria-expanded="${pop==='pal'}"></button><span class="sep"></span>${B.history()}<button class="tool" data-act="pop" data-v="more" aria-label="Ещё: масштаб, сетка, симметрия" aria-expanded="${pop==='more'}">${I('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>')}</button>`}
+function popHTML(){if(pop==='pal')return`<div class="pop" role="dialog" aria-label="Цвета"><h3>Цвет для правки</h3>${B.palette(false)}</div>`;if(pop==='more')return`<div class="pop" role="dialog" aria-label="Вид"><h3>Вид и помощники</h3><div class="vgrid"><button type="button" class="tool mhand ${S.tool==='hand'?'on':''}" data-act="tool" data-v="hand" aria-pressed="${S.tool==='hand'}">${ICON.hand}<span>Рука</span></button><button type="button" class="tool mredo" data-act="redo" ${S.redo.length?'':'disabled'}>${ICON.redo}<span>Повторить</span></button>${B.view()}</div><p class="hint">${S.layout==='mirror'?'Отражение на второй стороне меняется само. ':''}Правка мотива меняется во всех форматах: ${[...new Set(okFiles().map(x=>x.N))].join(', ')}.</p></div>`;return''}
+function paintPill(){const p=$('#pill');if(p){rerender(p,pillHTML());const o=$('#popslot');if(o)o.innerHTML=popHTML()}}
+function knitHTML(f){const D=S.dims,K=D.useK?D.K:D.Kt;return`<div class="knitw"><div class="klab">${f.tag==='центр'?'<span>мотив по центру</span>':S.layout==='pair'?`<span>${f.tag==='прав'?'правый носок':'левый носок'}: правая сторона | левая сторона</span>`:'<span>правая сторона носка</span><span>|</span><span>левая сторона носка</span>'}</div><div class="kin"><div class="ribbon" aria-hidden="true">${f.viol.map(r=>`<b style="top:${(r-1)/f.h*100}%;height:${100/f.h}%"></b>`).join('')}</div><canvas id="knit" role="img" aria-label="Как свяжется: ${f.N} игл, ${f.w} на ${f.h} точек${f.viol.length?', '+f.viol.length+' '+plural(f.viol.length,'ряд','ряда','рядов')+' с лишним цветом':''}"></canvas></div>
+ <p class="knote">Примерный вид: петля в ${fmtK(K)} раза шире, чем выше. Точный вид — на образце.</p></div>`}
+function result(){const f=curFile(),files=S.files;
+ if(!selected().length)return`<div class="res"><div class="note" style="max-width:520px;margin:var(--s8) auto"><h2>Выберите хотя бы одно число игл</h2><p class="hint">У отмеченных машин нет выбранных чисел игл — без этого макет не собрать.</p><div class="acts"><button class="btn primary" data-act="drawer" data-v="machines">Выбрать машину и иглы</button></div></div></div>`;
+ return`<div class="res">${sayHTML()}
+ <div class="bar"><div class="seg" role="tablist" aria-label="Формат" data-keep="seg">${files.map(x=>x.err?`<button disabled title="${esc(x.err)}" style="color:var(--error)">${x.N} ✕<span class="sr">, не собран</span></button>`:`<button role="tab" data-act="fmt" data-v="${x.key}" aria-selected="${x.key===S.cur}"><i class="${x.viol.length?'bad':''}" aria-hidden="true"></i>${x.N}${S.layout==='pair'?' '+x.tag:''}<em class="cnt ${x.viol.length?'':'ok'}" aria-hidden="true">${x.viol.length}</em><span class="sr">${x.viol.length?', '+x.viol.length+' '+plural(x.viol.length,'ряд','ряда','рядов')+' с лишним цветом':', без нарушений'}</span></button>`).join('')}</div><span class="sp"></span>
+  <div class="seg" role="group" aria-label="Вид"><button data-act="vmode" data-v="knit" aria-pressed="${vmode==='knit'}"><span class="lf">Как свяжется</span><span class="ls">В петлях</span></button><button data-act="vmode" data-v="dots" aria-pressed="${vmode==='dots'}"><span class="lf">По точкам</span><span class="ls">Точки</span></button></div>
+  <button class="master" role="switch" aria-checked="${S.edit}" data-act="edit"><i></i><span class="lf">Режим мастера</span><span class="ls">Правка</span></button></div>
+ <div class="stagebox"><div class="show" id="show">${f?(vmode==='knit'?knitHTML(f):`<div class="cvbox" id="cvbox"></div>${S.edit?`<div class="rowchip" id="rowchip" aria-live="polite">${B.status(S.hover)}</div><div id="popslot">${popHTML()}</div><div class="pill-tools" id="pill" role="toolbar" aria-label="Инструменты мастера">${pillHTML()}</div>`:''}`):`<div class="knitw"><div class="note bad"><b>${esc(files[0].err)}</b><p class="hint">${esc(files[0].hint)}</p><button class="link" data-act="drawer" data-v="size">Изменить размер мотива</button></div></div>`}</div>
+ <aside class="aside" id="aside" aria-label="Проверка и скачивание">${aside()}</aside></div></div>`}
+const SECS=[['machines','Машина'],['needles','Числа игл'],['weave','Переплетение'],['height','Высота файла'],['layout','Раскладка мотива'],['size','Размер мотива и цвета']];
+function drawerHTML(){
+ if(drawer==='check')return`<div class="scrim" data-act="drawer"></div><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="dh"><div class="dh"><h2 id="dh">Проверка макета</h2><button class="iconbtn" data-act="drawer" aria-label="Закрыть">${ICON.x}</button></div><div class="db" id="checkc" data-keep="db" style="display:grid;gap:var(--s3);padding-top:var(--s3)">${checkHTML(curFile())}</div><div class="df"><button class="btn" data-act="drawer">Готово</button></div></div>`;
+ return`<div class="scrim" data-act="drawer"></div><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="dh"><div class="dh"><h2 id="dh">Настройки макета</h2><button class="iconbtn" data-act="drawer" aria-label="Закрыть">${ICON.x}</button></div>
+ <div class="db" data-keep="db">${SECS.map(([k,t])=>`<section id="sec-${k}" aria-labelledby="h-${k}"><h3 id="h-${k}">${t}</h3>${B[k]()}</section>`).join('')}
+ <section aria-labelledby="h-bg"><h3 id="h-bg">Фон</h3>${B.palette(true)}<p class="hint">Фон найден по краям рисунка. Если ошиблись — выберите цвет и нажмите «Сделать фоном».</p></section></div>
+ <div class="df"><button class="btn primary" data-act="drawer">Готово — показать макет</button></div></div>`}
+App.render=()=>{
+ if(!S.src)ready=false;if(S.loading||S.error||!S.src){S.edit=false;if(!S.src)drawer=null}
+ const phase=!S.src||S.loading?'start':!ready?'ask':'result',f=curFile(),ok=okFiles();
+ const foot=phase==='ask'?`<div class="foot"><button class="btn primary big" style="flex:1" data-act="show">Показать макет</button></div>`:
+  phase==='result'&&ok.length?`<div class="foot">${f?`<button class="vb ${f.viol.length?'':'ok'}" data-act="drawer" data-v="check" aria-label="Проверка: ${f.viol.length?f.viol.length+' '+plural(f.viol.length,'ряд','ряда','рядов')+' с лишним цветом':'нарушений нет'}">${f.viol.length?ICON.warn+f.viol.length:ICON.ok}</button>`:''}<button class="btn primary" data-act="dlall">${ICON.down} Скачать ${ok.length===1?'BMP':ok.length+' BMP'}</button><button class="iconbtn" data-act="drawer" data-v="machines" aria-label="Настройки">${ICON.gear}</button></div>`:'';
+ rerender($('#app'),`<div class="c"><header class="hd"><span class="brand">Десе<em>н</em>атор</span><span class="sp"></span>
+  ${phase==='result'?`<button class="btn hidem" data-act="drawer" data-v="machines">${ICON.gear} Настройки</button><button class="btn hidem" data-act="new">${ICON.up} Другой рисунок</button>`:''}</header>
+  <main class="scroll" data-keep="m" style="${phase==='result'?'overflow:hidden':''}">${phase==='start'?start():phase==='ask'?ask():result()}</main>
+  ${foot}${drawer&&phase==='result'?drawerHTML():''}<input type="file" accept=".png,.jpg,.jpeg,.bmp,.webp,image/*" data-f="file" class="sr" tabindex="-1" aria-hidden="true"></div>`);
+ if($('#srcc'))srcThumb($('#srcc'));
+ if($('#deco'))deco($('#deco'));
+ clearTimeout(slowT);if(S.loading)slowT=setTimeout(()=>{const s=$('#slow');if(s&&S.loading)s.textContent='Всё ещё переводим — большой рисунок обрабатывается дольше. Можно подождать или выбрать другой файл.'},10000);
+ if($('#knit')&&f){const sh=$('#show'),kw=$('.knitw'),cs=getComputedStyle(kw),padX=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight),padY=parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom),lab=$('.klab').offsetHeight,note=$('.knote').offsetHeight,gap=parseFloat(cs.rowGap)||8;
+  drawKnit($('#knit'),f,Math.max(40,sh.clientWidth-padX-16),Math.max(40,sh.clientHeight-padY-lab-note-gap*2-2))}
+ if($('#cvbox')){$('#cvbox').appendChild(cv);view=view||createView(cv,{labels:true,marks:fl=>showThin?thin(fl):null,onHover:h=>{const rc=$('#rowchip');if(rc)rc.innerHTML=B.status(h)}});App.view=view;requestAnimationFrame(()=>view.render())}
+};
+['dragenter','dragleave','drop'].forEach(t=>document.addEventListener(t,e=>{const d=$('#drop');if(d)d.classList.toggle('over',t==='dragenter')}));
+let rsT;addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{if($('#knit'))App.render()},120)});
+initProto('П-48 · макет (вариант В)');
+</script></body></html>
