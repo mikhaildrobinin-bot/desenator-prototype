@@ -283,7 +283,7 @@ let LS={};try{LS=JSON.parse(localStorage.getItem('desenator.view')||'{}')}catch(
 const save=()=>{try{localStorage.setItem('desenator.view',JSON.stringify({big:LS.big,gridOn:LS.gridOn,gw:LS.gw,gc:LS.gc,loupe:LS.loupe}))}catch(e){}};
 if(LS.gridOn===undefined)LS.gridOn=true; if(!LS.gw)LS.gw=1; if(!LS.gc)LS.gc='auto';
 
-const PAL=[{n:'Фон',c:'#FFFFFF'},{n:'Чёрный',c:'#1B1B1B'},{n:'Красный',c:'#D62F2F'},{n:'Синий',c:'#2A5CC8'},{n:'Серый',c:'#9A9A9A'}];
+const PAL=[{n:'Фон',c:'#FFFFFF'},{n:'Чёрный',c:'#1B1B1B'},{n:'Красный',c:'#D62F2F'},{n:'Синий',c:'#2A5CC8'},{n:'Серый',c:'#9A9A9A'},{n:'Зелёный',c:'#00C853'}];
 const RGB=PAL.map(p=>[1,3,5].map(i=>parseInt(p.c.slice(i,i+2),16)));
 const GRIDC={auto:['Серый (авто)','#808080'],black:['Чёрный','#000000'],white:['Белый','#FFFFFF'],red:['Красный','#E00000'],blue:['Синий','#0030D0']};
 const MAXC=4;
@@ -298,6 +298,7 @@ function motif(){
  [...'ЛАПКА'].forEach((ch,k)=>FONT[ch].forEach((r,j)=>[...r].forEach((p,i)=>{if(p==='#')set(26+k*6+i,8+j,1)})));
  for(let x=26;x<=54;x++){set(x,19,1);set(x,20,1)}
  [28,32,36,40,44].forEach(x=>set(x,25,1));
+ for(let x=56;x<=58;x++)for(let y=18;y<=21;y++)set(x,y,5);
  return {w:W,h:H,g};
 }
 const _src={};
@@ -363,7 +364,7 @@ function finalSample(P){
  const src=getSource(P.many),g=sample(src,P.crop,P);
  if(P.halo){const m=haloMask(g,src.cols,src.rows);applyPlan(g,recolorPlan(g,src.cols,src.rows,4,'near',m))}
  if(P.nColors){for(let guard=0;guard<6&&distinct(g)>P.nColors;guard++){
-   const cnt=[0,0,0,0,0];for(const v of g)cnt[v]++;let c=-1;for(let k=1;k<5;k++)if(cnt[k]&&(c<0||cnt[k]<cnt[c]))c=k;if(c<0)break;
+   const cnt=PAL.map(()=>0);for(const v of g)cnt[v]++;let c=-1;for(let k=1;k<PAL.length;k++)if(cnt[k]&&(c<0||cnt[k]<cnt[c]))c=k;if(c<0)break;
    applyPlan(g,recolorPlan(g,src.cols,src.rows,c,'near'));}}
  return g;
 }
@@ -423,7 +424,7 @@ function paintOff(e,grid){
 }
 function computeViol(e){
  const {W,H,grid}=e,rows=[];let n=0;const runs=[];let cur=null;
- for(let y=0;y<H;y++){const s=new Set();for(let x=0;x<W;x++)s.add(grid[y*W+x]);const bad=s.size>MAXC;rows.push(bad?s.size:0);
+ for(let y=0;y<H;y++){const s=new Set();for(let x=0;x<W;x++)s.add(grid[y*W+x]);s.delete(0);const bad=s.size>MAXC;rows.push(bad?s.size:0);
   if(bad){n++;if(cur&&cur.b===y-1)cur.b=y;else{cur={a:y,b:y};runs.push(cur)}}}
  e.viol={rows,n,runs};
 }
@@ -432,7 +433,7 @@ function partners(e,x,y){
  if(e.mode==='copy')return [[x<e.half?x+e.half:x-e.half,y]];
  return [];
 }
-function stats(e){const cnt=[0,0,0,0,0];for(const v of e.grid)cnt[v]++;return cnt}
+function stats(e){const cnt=PAL.map(()=>0);for(const v of e.grid)cnt[v]++;return cnt}
 
 function commit(e,changes,label){
  const idx=[],bef=[],aft=[];
@@ -776,7 +777,7 @@ function updatePos(c,e){
   else $('#pos').textContent=IDLE();
   $('#loupe').style.display='none';return}
  const col=E.grid[c.y*E.W+c.x],bad=E.viol.rows[c.y];
- $('#pos').innerHTML=`Столбец ${c.x+1}, ряд ${c.y+1} · цвет ${col} (${PAL[col].n})${bad?` · <span style="color:var(--error)">ряд-нарушитель: ${bad} цв. из ${MAXC}</span>`:''}`;
+ $('#pos').innerHTML=`Столбец ${c.x+1}, ряд ${c.y+1} · цвет ${col} (${PAL[col].n})${bad?` · <span style="color:var(--error)">ряд-нарушитель: ${bad} цв. рисунка из ${MAXC}</span>`:''}`;
  if(E.loupeOn)drawLoupe(c,e);else $('#loupe').style.display='none';
 }
 function drawLoupe(c,e){
@@ -853,9 +854,9 @@ function cancelPreview(){E.preview=null;$('#strip').innerHTML='';requestDraw()}
 
 function violPop(btn){
  const v=E.viol;
- if(!v.n){toast('Нарушений нет: в каждом ряду не больше '+MAXC+' цветов');return}
+ if(!v.n){toast('Нарушений нет: в каждом ряду фон и не больше '+MAXC+' цветов рисунка');return}
  const list=[];for(let y=0;y<E.H&&list.length<400;y++)if(v.rows[y])list.push(y);
- const p=popTo(btn,`<h3>Ряды-нарушители: ${v.n}</h3><p class="fine" style="margin-top:0">В ряду допустимо не больше ${MAXC} цветов. Нажмите на ряд — он покажется в макете.</p>
+ const p=popTo(btn,`<h3>Ряды-нарушители: ${v.n}</h3><p class="fine" style="margin-top:0">В ряду допустимо: фон и не больше ${MAXC} цветов рисунка. Нажмите на ряд — он покажется в макете.</p>
   <div style="max-height:264px;overflow:auto;border-top:1px solid var(--line)">${list.map(y=>`<button class="vrow" data-y="${y}"><span aria-hidden="true" style="color:var(--cv-viol)">⚠</span>Ряд ${y+1}<span class="e">${v.rows[y]} из ${MAXC}</span></button>`).join('')}${v.n>list.length?`<p class="fine">… и ещё ${v.n-list.length}</p>`:''}</div>`,p=>{
    $$('.vrow',p).forEach(b=>b.onclick=()=>{const y=+b.dataset.y;closePops();const m=metrics();EV.view.scrollTop=Math.max(0,y*E.s-EV.view.clientHeight/3);E.hover={x:Math.floor(E.W/2),y};requestDraw()})});
  p.style.top='auto';p.style.left='auto';p.style.right='12px';p.style.bottom=(app.getBoundingClientRect().bottom-btn.getBoundingClientRect().top+6)+'px';
@@ -935,8 +936,8 @@ function wirePrep(src){
 
   const raw=sample(src,P.crop,P),before=distinct(raw),after=distinct(finalSample(P));
   const gray=raw.reduce((n,v)=>n+(v===4),0);
-  $('#ncv').textContent=P.nColors||5;
-  const cnt=`<span class="chip ${after>MAXC?'warn':'ok'}">Цветов: было ${before} → станет ${after}${after>MAXC?` (нужно не больше ${MAXC})`:''}</span>`;
+  $('#ncv').textContent=P.nColors||PAL.length;
+  const cnt=`<span class="chip ${after>MAXC+1?'warn':'ok'}">Цветов с фоном: было ${before} → станет ${after}${after>MAXC+1?` (в ряду: фон и не больше ${MAXC} цветов рисунка)`:''}</span>`;
   $('#pnote').innerHTML=P.err?`<div class="note err" role="alert"><span><b>Не удалось пересчитать.</b> Рисунок не изменён. Сетка, сдвиг и «Перевести в точки» работают.</span><span class="sp"></span><button class="btn" id="retry">Повторить</button></div>`:(gray>0?`<div class="note ${P.halo?'ok':'warn'}" role="status"><span>${P.halo?`Серая кайма будет убрана: серых клеток сейчас ${gray}.`:`Серых клеток на краях: <b>${gray}</b>. Сдвиньте сетку по контуру или включите «Убрать серую кайму».`}</span>${cnt}</div>`:`<div class="note ok" role="status"><span>Края лежат по клеткам: серой каймы нет.</span>${cnt}</div>`);
   $('#retry')&&($('#retry').onclick=()=>{S.ov=null;render()});
   $('#ppos').textContent=`Сетка ${src.cols} × ${src.rows}: ${cells(src.cols*src.rows)}`+(Math.abs((cr.x1-cr.x0)/src.cols-(cr.y1-cr.y0)/src.rows)>.01?' · клетки не квадратные':'');
@@ -951,7 +952,7 @@ function wirePrep(src){
  $('#bgp').onclick=e=>{P.pick=!P.pick;e.currentTarget.setAttribute('aria-pressed',P.pick);toast(P.pick?'Щёлкните по фону рисунка — он станет прозрачным':'Пипетка выключена')};
  $('#tol').oninput=e=>{P.bgTol=+e.target.value;pdraw()};
  $('#bgr').onclick=()=>{P.bgSample=null;$('#bgr').disabled=true;pdraw()};
- $$('[data-nc]').forEach(b=>b.onclick=()=>{if(P.err){toast('Сейчас нельзя: пересчёт не удался. Нажмите «Повторить»');return}const n=Math.max(2,Math.min(5,(P.nColors||5)+ +b.dataset.nc));P.nColors=n===5?null:n;pdraw()});
+ $$('[data-nc]').forEach(b=>b.onclick=()=>{if(P.err){toast('Сейчас нельзя: пересчёт не удался. Нажмите «Повторить»');return}const n=Math.max(2,Math.min(PAL.length,(P.nColors||PAL.length)+ +b.dataset.nc));P.nColors=n===PAL.length?null:n;pdraw()});
  $('#halo').onchange=e=>{P.halo=e.target.checked;pdraw()};
  const pbw=$('#pbw');pbw.onpointerdown=()=>{P.show=true;pdraw()};pbw.onpointerup=pbw.onpointerleave=pbw.onpointercancel=()=>{if(P.show){P.show=false;pdraw()}};pbw.onclick=e=>{if(e.detail===0){P.show=!P.show;pdraw()}};
 
@@ -1119,7 +1120,7 @@ function toFile(){
  if(!E)return;const v=E.viol;
  if(!v.n){advance(5);return}
  const runs=v.runs.map(r=>r.a===r.b?`${r.a+1}`:`${r.a+1}–${r.b+1}`).join(', ');
- dialog(`<h2>В ${pl(v.n,['ряду','рядах','рядах'])} больше ${MAXC} цветов</h2><p>Ряды: ${runs}. Машина может не провязать такие ряды. Программа сама их не перекрашивает: поправьте точки или продолжайте как есть.</p><div class="acts"><button class="btn primary" data-x="e">Вернуться к правке</button><button class="btn" data-x="g">Всё равно к файлу</button></div>`,(o,close)=>{
+ dialog(`<h2>В ${pl(v.n,['ряду','рядах','рядах'])} больше ${MAXC} цветов рисунка</h2><p>Ряды: ${runs}. Машина может не провязать такие ряды. Программа сама их не перекрашивает: поправьте точки или продолжайте как есть.</p><div class="acts"><button class="btn primary" data-x="e">Вернуться к правке</button><button class="btn" data-x="g">Всё равно к файлу</button></div>`,(o,close)=>{
   o.querySelector('[data-x=e]').onclick=close;
   o.querySelector('[data-x=g]').onclick=()=>{close();advance(5)}});
 }
@@ -1159,7 +1160,7 @@ function step5(){
   ${S.done?`<div class="note ok" role="status"><span><b>Скачано: ${pl(S.done,['файл','файла','файлов'])}.</b> Скопируйте на флешку и вставьте её в пульт машины.</span></div>`:''}
   <ul class="files">${fl.map(f=>f.err?`<li class="fl bad"><div class="meta"><span class="fname">${esc(f.name)}</span><small>${esc(f.err)}</small></div><span class="chip err">Не собран</span></li>`:
    `<li class="fl"><div class="meta"><span class="fname">${esc(f.name)}</span><small>${f.N} игл × ${f.H} рядов · ${esc(machinesFor(f.N).join(', ')||'—')}</small></div>${f.viol.n?`<span class="chip err"><span aria-hidden="true">⚠</span> Рядов с лишним цветом: ${f.viol.n}</span>`:'<span class="chip ok"><span aria-hidden="true">✓</span> Нарушений нет</span>'}<button class="btn" data-dl="${f.N}">Скачать этот</button></li>`).join('')}</ul>
-  ${bad.length?`<div class="box"><h2>Что проверить</h2><p>В ${pl(bad[0].viol.n,['ряду','рядах','рядах'])} больше ${MAXC} цветов: ${bad[0].viol.runs.map(r=>r.a===r.b?r.a+1:`${r.a+1}–${r.b+1}`).join(', ')}. Машина может не провязать такие ряды.</p><button class="btn" data-goto="4">Вернуться к правке</button></div>`:''}
+  ${bad.length?`<div class="box"><h2>Что проверить</h2><p>В ${pl(bad[0].viol.n,['ряду','рядах','рядах'])} больше ${MAXC} цветов рисунка: ${bad[0].viol.runs.map(r=>r.a===r.b?r.a+1:`${r.a+1}–${r.b+1}`).join(', ')}. Машина может не провязать такие ряды.</p><button class="btn" data-goto="4">Вернуться к правке</button></div>`:''}
   <div class="box"><h2>Что дальше</h2><p>Скопируйте файл на флешку и вставьте её в пульт машины. Другие форматы пультов появятся позже.</p></div>
   <div class="rowb"><button class="btn" data-goto="4">Вернуться к правке</button><button class="btn" data-goto="1">Начать с другого рисунка</button></div>
  </div></div>`;
